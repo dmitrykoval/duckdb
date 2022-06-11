@@ -25,3 +25,7 @@ endif()
 if(${BUILD_VISUALIZER_EXTENSION})
   add_subdirectory(visualizer)
 endif()
+
+if(${BUILD_SPATIAL_EXTENSION})
+  add_subdirectory(spatial)
+endif()

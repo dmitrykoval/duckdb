@@ -12,7 +12,7 @@
 #include "duckdb/common/constants.hpp"
 #include "duckdb/common/single_thread_ptr.hpp"
 #include "duckdb/common/vector.hpp"
-
+#include "duckdb/common/types/geography_type.hpp"
 
 namespace duckdb {
 
@@ -317,6 +317,8 @@ enum class PhysicalType : uint8_t {
 	/// Boolean as 1 bit, LSB bit-packed ordering
 	BIT = 206,
 
+	GEOGRAPHY = 220,
+
 	INVALID = 255
 };
 
@@ -365,7 +367,9 @@ enum class LogicalTypeId : uint8_t {
 	LIST = 101,
 	MAP = 102,
 	TABLE = 103,
-	ENUM = 104
+	ENUM = 104,
+
+	GEOGRAPHY = 120,
 };
 
 struct ExtraTypeInfo;
@@ -465,6 +469,8 @@ public:
 	static constexpr const LogicalTypeId POINTER = LogicalTypeId::POINTER;
 	static constexpr const LogicalTypeId TABLE = LogicalTypeId::TABLE;
 	static constexpr const LogicalTypeId INVALID = LogicalTypeId::INVALID;
+
+	static constexpr const LogicalTypeId GEOGRAPHY = LogicalTypeId::GEOGRAPHY;
 
 	static constexpr const LogicalTypeId ROW_TYPE = LogicalTypeId::BIGINT;
 
@@ -567,6 +573,8 @@ PhysicalType GetTypeId() {
 		return PhysicalType::VARCHAR;
 	} else if (std::is_same<T, interval_t>()) {
 		return PhysicalType::INTERVAL;
+	} else if (std::is_same<T, Geography>()) {
+		return PhysicalType::GEOGRAPHY;
 	} else {
 		return PhysicalType::INVALID;
 	}

@@ -24,6 +24,7 @@ class Value {
 	friend struct StringValue;
 	friend struct StructValue;
 	friend struct ListValue;
+	friend struct GeographyValue;
 
 public:
 	//! Create an empty NULL value of the specified type
@@ -44,6 +45,9 @@ public:
 	DUCKDB_API Value(string_t val); // NOLINT: Allow implicit conversion from `string_t`
 	//! Create a VARCHAR value
 	DUCKDB_API Value(string val); // NOLINT: Allow implicit conversion from `string`
+	//! Create a GEOGRAPHY value
+	DUCKDB_API Value(const Geography& val); // NOLINT: Allow implicit conversion from `Geography`
+	DUCKDB_API Value(Geography&& val); // NOLINT: Allow implicit conversion from `Geography`
 	//! Copy constructor
 	DUCKDB_API Value(const Value &other);
 	//! Move constructor
@@ -153,6 +157,10 @@ public:
 	}
 	//! Creates a blob by casting a specified string to a blob (i.e. interpreting \x characters)
 	DUCKDB_API static Value BLOB(const string &data);
+
+	//! Create a Geography value from a specified Geography instance
+	DUCKDB_API static Value GEOGRAPHY(const Geography& geography);
+	DUCKDB_API static Value GEOGRAPHY(Geography&& geography);
 
 	template <class T>
 	T GetValue() const {
@@ -276,6 +284,8 @@ public:
 	vector<Value> struct_value;
 	vector<Value> list_value;
 
+	std::unique_ptr<Geography> geography;
+
 private:
 	template <class T>
 	T GetValueInternal() const;
@@ -362,6 +372,10 @@ struct ListValue {
 	DUCKDB_API static const vector<Value> &GetChildren(const Value &value);
 };
 
+struct GeographyValue {
+	DUCKDB_API static const Geography &Get(const Value &value);
+};
+
 //! Return the internal integral value for any type that is stored as an integral value internally
 //! This can be used on values of type integer, uinteger, but also date, timestamp, decimal, etc
 struct IntegralValue {
@@ -443,6 +457,8 @@ template <>
 DUCKDB_API timestamp_t Value::GetValue() const;
 template <>
 DUCKDB_API interval_t Value::GetValue() const;
+template <>
+DUCKDB_API Geography Value::GetValue() const;
 
 template <>
 DUCKDB_API bool Value::GetValueUnsafe() const;
@@ -480,6 +496,8 @@ template <>
 DUCKDB_API timestamp_t Value::GetValueUnsafe() const;
 template <>
 DUCKDB_API interval_t Value::GetValueUnsafe() const;
+template <>
+DUCKDB_API Geography Value::GetValueUnsafe() const;
 
 template <>
 DUCKDB_API int8_t &Value::GetReferenceUnsafe();
@@ -511,6 +529,8 @@ template <>
 DUCKDB_API timestamp_t &Value::GetReferenceUnsafe();
 template <>
 DUCKDB_API interval_t &Value::GetReferenceUnsafe();
+template <>
+DUCKDB_API Geography &Value::GetReferenceUnsafe();
 
 template <>
 DUCKDB_API bool Value::IsValid(float value);

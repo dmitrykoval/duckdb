@@ -13,6 +13,8 @@
 #include "duckdb/common/types/string_heap.hpp"
 #include "duckdb/common/types/string_type.hpp"
 
+#include <array>
+
 namespace duckdb {
 
 class BufferHandle;
@@ -28,7 +30,8 @@ enum class VectorBufferType : uint8_t {
 	STRUCT_BUFFER,       // struct buffer, holds a ordered mapping from name to child vector
 	LIST_BUFFER,         // list buffer, holds a single flatvector child
 	MANAGED_BUFFER,      // managed buffer, holds a buffer managed by the buffermanager
-	OPAQUE_BUFFER        // opaque buffer, can be created for example by the parquet reader
+	OPAQUE_BUFFER,       // opaque buffer, can be created for example by the parquet reader
+	GEOGRAPHY_BUFFER     // geography buffer, holds sequence of geographical points
 };
 
 //! The VectorBuffer is a class used by the vector to hold its data
@@ -181,6 +184,99 @@ public:
 
 private:
 	unique_ptr<BufferHandle> handle;
+};
+
+class GeographyBuffer : public VectorBuffer {
+public:
+	GeographyBuffer() : VectorBuffer(VectorBufferType::GEOGRAPHY_BUFFER) {
+		NewChunk(MIN_BUFFER_SIZE);
+	}
+
+public:
+	std::array<double *, 2> AddPoint(double lng, double lat) {
+		EnsureEnoughSpace(1);
+
+		auto &lngs_head = lng_chunks[curr_chunk];
+		auto &lats_head = lat_chunks[curr_chunk];
+		auto start_idx = curr_in_chunk_pos;
+		lngs_head[curr_in_chunk_pos] = lng;
+		lats_head[curr_in_chunk_pos] = lat;
+		curr_in_chunk_pos++;
+
+		return {&lngs_head[start_idx], &lats_head[start_idx]};
+	}
+
+	std::array<double *, 2> AddPoints(const std::vector<double> &lngs, const std::vector<double> &lats) {
+		const idx_t len = lngs.size();
+		EnsureEnoughSpace(len);
+
+		auto &lngs_head = lng_chunks[curr_chunk];
+		auto &lats_head = lat_chunks[curr_chunk];
+		auto start_idx = curr_in_chunk_pos;
+		for (idx_t i = 0; i < len; i++, curr_in_chunk_pos++) {
+			lngs_head[curr_in_chunk_pos] = lngs[i];
+			lats_head[curr_in_chunk_pos] = lats[i];
+		}
+
+		return {&lngs_head[start_idx], &lats_head[start_idx]};
+	}
+
+	std::array<double *, 2> AddPoints(const double *lngs, const double *lats, idx_t len) {
+		EnsureEnoughSpace(len);
+
+		auto &lngs_head = lng_chunks[curr_chunk];
+		auto &lats_head = lat_chunks[curr_chunk];
+
+		auto start_idx = curr_in_chunk_pos;
+		std::memcpy(&lngs_head[curr_in_chunk_pos], lngs, len);
+		std::memcpy(&lats_head[curr_in_chunk_pos], lats, len);
+		curr_in_chunk_pos += len;
+
+		return {&lngs_head[start_idx], &lats_head[start_idx]};
+	}
+
+	GeographyType GetGeoType() const {
+		return geo_type;
+	}
+
+	void UpdateGeoType(GeographyType type) {
+		// If all Geographies are of the same type, geo_type would be set to that type.
+		// If Geographies are of mixed type, geo_type would be set to collection, reflecting mixed type
+		if (geo_type == GeographyType::UNKNOWN) {
+			geo_type = type;
+		} else if (geo_type != type){
+			geo_type = GeographyType::GEOMETRY_COLLECTION;
+		}
+	}
+
+private:
+	void NewChunk(const idx_t len) {
+		auto const chunk_size = MaxValue<idx_t>(len, MIN_BUFFER_SIZE);
+		lng_chunks.emplace_back(unique_ptr<double[]>(new double[chunk_size]));
+		lat_chunks.emplace_back(unique_ptr<double[]>(new double[chunk_size]));
+		sizes.push_back(chunk_size);
+
+		curr_chunk++;
+		curr_in_chunk_pos = 0;
+	}
+
+	void EnsureEnoughSpace(const idx_t len) {
+		if (sizes[curr_chunk] - curr_in_chunk_pos < len) {
+			NewChunk(len);
+		}
+	}
+
+private:
+	vector<unique_ptr<double[]>> lng_chunks;
+	vector<unique_ptr<double[]>> lat_chunks;
+	vector<idx_t> sizes;
+
+	row_t curr_chunk = -1;
+	idx_t curr_in_chunk_pos = 0;
+
+	GeographyType geo_type = GeographyType::UNKNOWN;
+
+	constexpr static idx_t MIN_BUFFER_SIZE = 4096;
 };
 
 } // namespace duckdb

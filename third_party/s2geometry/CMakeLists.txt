@@ -1,0 +1,164 @@
+if(POLICY CMP0063)
+    cmake_policy(SET CMP0063 NEW)
+endif()
+
+set(S2_SOURCE_DIR "${PROJECT_SOURCE_DIR}/third_party/s2geometry/src")
+
+set(ABSL_SOURCE_DIR "${PROJECT_SOURCE_DIR}/third_party/s2geometry/third_party/abseil-cpp")
+if(NOT EXISTS "${ABSL_SOURCE_DIR}/CMakeLists.txt")
+    message(FATAL_ERROR " submodule contrib/abseil-cpp is missing.")
+endif()
+
+set(EXTRA_TARGET_LINK_LIBRARIES)
+set(CMAKE_EXPORT_PACKAGE_REGISTRY ON)
+
+set(ABSL_ENABLE_INSTALL TRUE)
+set(CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}/abseil-install")
+
+add_subdirectory("third_party/abseil-cpp" "${CMAKE_BINARY_DIR}/absl")
+add_subdirectory("${S2_SOURCE_DIR}/s2/util/math/exactfloat/bn")
+
+set(S2_SRCS
+        ${S2_SOURCE_DIR}/s2/encoded_s2cell_id_vector.cc
+        ${S2_SOURCE_DIR}/s2/encoded_s2point_vector.cc
+        ${S2_SOURCE_DIR}/s2/encoded_s2shape_index.cc
+        ${S2_SOURCE_DIR}/s2/encoded_string_vector.cc
+        ${S2_SOURCE_DIR}/s2/id_set_lexicon.cc
+        ${S2_SOURCE_DIR}/s2/mutable_s2shape_index.cc
+        ${S2_SOURCE_DIR}/s2/r2rect.cc
+        ${S2_SOURCE_DIR}/s2/s1angle.cc
+        ${S2_SOURCE_DIR}/s2/s1chord_angle.cc
+        ${S2_SOURCE_DIR}/s2/s1interval.cc
+        ${S2_SOURCE_DIR}/s2/s2boolean_operation.cc
+        ${S2_SOURCE_DIR}/s2/s2buffer_operation.cc
+        ${S2_SOURCE_DIR}/s2/s2builder.cc
+        ${S2_SOURCE_DIR}/s2/s2builder_graph.cc
+        ${S2_SOURCE_DIR}/s2/s2builderutil_closed_set_normalizer.cc
+        ${S2_SOURCE_DIR}/s2/s2builderutil_find_polygon_degeneracies.cc
+        ${S2_SOURCE_DIR}/s2/s2builderutil_get_snapped_winding_delta.cc
+        ${S2_SOURCE_DIR}/s2/s2builderutil_lax_polygon_layer.cc
+        ${S2_SOURCE_DIR}/s2/s2builderutil_lax_polyline_layer.cc
+        ${S2_SOURCE_DIR}/s2/s2builderutil_s2point_vector_layer.cc
+        ${S2_SOURCE_DIR}/s2/s2builderutil_s2polygon_layer.cc
+        ${S2_SOURCE_DIR}/s2/s2builderutil_s2polyline_layer.cc
+        ${S2_SOURCE_DIR}/s2/s2builderutil_s2polyline_vector_layer.cc
+        ${S2_SOURCE_DIR}/s2/s2builderutil_snap_functions.cc
+        ${S2_SOURCE_DIR}/s2/s2cap.cc
+        ${S2_SOURCE_DIR}/s2/s2cell.cc
+        ${S2_SOURCE_DIR}/s2/s2cell_id.cc
+        ${S2_SOURCE_DIR}/s2/s2cell_index.cc
+        ${S2_SOURCE_DIR}/s2/s2cell_union.cc
+        ${S2_SOURCE_DIR}/s2/s2centroids.cc
+        ${S2_SOURCE_DIR}/s2/s2closest_cell_query.cc
+        ${S2_SOURCE_DIR}/s2/s2closest_edge_query.cc
+        ${S2_SOURCE_DIR}/s2/s2closest_point_query.cc
+        ${S2_SOURCE_DIR}/s2/s2contains_vertex_query.cc
+        ${S2_SOURCE_DIR}/s2/s2convex_hull_query.cc
+        ${S2_SOURCE_DIR}/s2/s2coords.cc
+        ${S2_SOURCE_DIR}/s2/s2crossing_edge_query.cc
+        ${S2_SOURCE_DIR}/s2/s2debug.cc
+        ${S2_SOURCE_DIR}/s2/s2earth.cc
+        ${S2_SOURCE_DIR}/s2/s2edge_clipping.cc
+        ${S2_SOURCE_DIR}/s2/s2edge_crosser.cc
+        ${S2_SOURCE_DIR}/s2/s2edge_crossings.cc
+        ${S2_SOURCE_DIR}/s2/s2edge_distances.cc
+        ${S2_SOURCE_DIR}/s2/s2edge_tessellator.cc
+        ${S2_SOURCE_DIR}/s2/s2furthest_edge_query.cc
+        ${S2_SOURCE_DIR}/s2/s2hausdorff_distance_query.cc
+        ${S2_SOURCE_DIR}/s2/s2latlng.cc
+        ${S2_SOURCE_DIR}/s2/s2latlng_rect.cc
+        ${S2_SOURCE_DIR}/s2/s2latlng_rect_bounder.cc
+        ${S2_SOURCE_DIR}/s2/s2lax_loop_shape.cc
+        ${S2_SOURCE_DIR}/s2/s2lax_polygon_shape.cc
+        ${S2_SOURCE_DIR}/s2/s2lax_polyline_shape.cc
+        ${S2_SOURCE_DIR}/s2/s2loop.cc
+        ${S2_SOURCE_DIR}/s2/s2loop_measures.cc
+        ${S2_SOURCE_DIR}/s2/s2measures.cc
+        ${S2_SOURCE_DIR}/s2/s2memory_tracker.cc
+        ${S2_SOURCE_DIR}/s2/s2metrics.cc
+        ${S2_SOURCE_DIR}/s2/s2max_distance_targets.cc
+        ${S2_SOURCE_DIR}/s2/s2min_distance_targets.cc
+        ${S2_SOURCE_DIR}/s2/s2padded_cell.cc
+        ${S2_SOURCE_DIR}/s2/s2point_compression.cc
+        ${S2_SOURCE_DIR}/s2/s2point_region.cc
+        ${S2_SOURCE_DIR}/s2/s2pointutil.cc
+        ${S2_SOURCE_DIR}/s2/s2polygon.cc
+        ${S2_SOURCE_DIR}/s2/s2polyline.cc
+        ${S2_SOURCE_DIR}/s2/s2polyline_alignment.cc
+        ${S2_SOURCE_DIR}/s2/s2polyline_measures.cc
+        ${S2_SOURCE_DIR}/s2/s2polyline_simplifier.cc
+        ${S2_SOURCE_DIR}/s2/s2predicates.cc
+        ${S2_SOURCE_DIR}/s2/s2projections.cc
+        ${S2_SOURCE_DIR}/s2/s2r2rect.cc
+        ${S2_SOURCE_DIR}/s2/s2region.cc
+        ${S2_SOURCE_DIR}/s2/s2region_term_indexer.cc
+        ${S2_SOURCE_DIR}/s2/s2region_coverer.cc
+        ${S2_SOURCE_DIR}/s2/s2region_intersection.cc
+        ${S2_SOURCE_DIR}/s2/s2region_union.cc
+        ${S2_SOURCE_DIR}/s2/s2shape_index.cc
+        ${S2_SOURCE_DIR}/s2/s2shape_index_buffered_region.cc
+        ${S2_SOURCE_DIR}/s2/s2shape_index_measures.cc
+        ${S2_SOURCE_DIR}/s2/s2shape_measures.cc
+        ${S2_SOURCE_DIR}/s2/s2shape_nesting_query.cc
+        ${S2_SOURCE_DIR}/s2/s2shapeutil_build_polygon_boundaries.cc
+        ${S2_SOURCE_DIR}/s2/s2shapeutil_coding.cc
+        ${S2_SOURCE_DIR}/s2/s2shapeutil_contains_brute_force.cc
+        ${S2_SOURCE_DIR}/s2/s2shapeutil_conversion.cc
+        ${S2_SOURCE_DIR}/s2/s2shapeutil_edge_iterator.cc
+        ${S2_SOURCE_DIR}/s2/s2shapeutil_get_reference_point.cc
+        ${S2_SOURCE_DIR}/s2/s2shapeutil_range_iterator.cc
+        ${S2_SOURCE_DIR}/s2/s2shapeutil_visit_crossing_edge_pairs.cc
+        ${S2_SOURCE_DIR}/s2/s2text_format.cc
+        ${S2_SOURCE_DIR}/s2/s2wedge_relations.cc
+        ${S2_SOURCE_DIR}/s2/s2winding_operation.cc
+        ${S2_SOURCE_DIR}/s2/strings/serialize.cc
+        ${S2_SOURCE_DIR}/s2/util/bits/bit-interleave.cc
+        ${S2_SOURCE_DIR}/s2/util/coding/coder.cc
+        ${S2_SOURCE_DIR}/s2/util/coding/varint.cc
+        ${S2_SOURCE_DIR}/s2/util/math/exactfloat/exactfloat.cc
+        ${S2_SOURCE_DIR}/s2/util/math/mathutil.cc
+        ${S2_SOURCE_DIR}/s2/util/units/length-units.cc
+        )
+
+add_library(duckdb_s2 STATIC ${S2_SRCS})
+target_compile_options(duckdb_s2 PRIVATE -Wno-dev)
+
+# Copied from contrib/s2geometry/CMakeLists
+target_link_libraries(duckdb_s2 PRIVATE
+        duckdb_crypto
+        absl::base
+        absl::btree
+        absl::config
+        absl::core_headers
+        absl::dynamic_annotations
+        absl::endian
+        absl::fixed_array
+        absl::flat_hash_map
+        absl::flat_hash_set
+        absl::hash
+        absl::inlined_vector
+        absl::int128
+        absl::log_severity
+        absl::memory
+        absl::span
+        absl::str_format
+        absl::strings
+        absl::type_traits
+        absl::utility
+        )
+
+target_include_directories(duckdb_s2 PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>/src")
+target_include_directories(duckdb_s2 SYSTEM PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>/third_party/abseil-cpp/")
+set_target_properties(duckdb_s2 PROPERTIES EXPORT_NAME duckdb_s2)
+
+install(TARGETS duckdb_crypto
+        EXPORT "${DUCKDB_EXPORT_SET}"
+        LIBRARY DESTINATION "${INSTALL_LIB_DIR}"
+        ARCHIVE DESTINATION "${INSTALL_LIB_DIR}")
+
+install(TARGETS duckdb_s2
+        EXPORT "${DUCKDB_EXPORT_SET}"
+        LIBRARY DESTINATION "${INSTALL_LIB_DIR}"
+        ARCHIVE DESTINATION "${INSTALL_LIB_DIR}")
+
+disable_target_warnings(duckdb_s2)

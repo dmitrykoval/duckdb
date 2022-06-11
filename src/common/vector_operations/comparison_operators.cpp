@@ -187,6 +187,9 @@ public:
 		case PhysicalType::STRUCT:
 			NestedComparisonExecutor<OP>(left, right, result, count);
 			break;
+		case PhysicalType::GEOGRAPHY:
+			TemplatedExecute<Geography, OP>(left, right, result, count);
+			break;
 		default:
 			throw InternalException("Invalid type for comparison");
 		}

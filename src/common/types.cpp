@@ -132,6 +132,8 @@ PhysicalType LogicalType::GetInternalType() {
 		return PhysicalType::INVALID;
 	case LogicalTypeId::USER:
 		return PhysicalType::UNKNOWN;
+	case LogicalTypeId::GEOGRAPHY:
+		return PhysicalType::GEOGRAPHY;
 	default:
 		throw InternalException("Invalid LogicalType %s", ToString());
 	}
@@ -173,6 +175,8 @@ constexpr const LogicalTypeId LogicalType::BLOB;
 constexpr const LogicalTypeId LogicalType::INTERVAL;
 constexpr const LogicalTypeId LogicalType::ROW_TYPE;
 
+constexpr const LogicalTypeId LogicalType::GEOGRAPHY;
+
 // TODO these are incomplete and should maybe not exist as such
 constexpr const LogicalTypeId LogicalType::TABLE;
 
@@ -201,7 +205,7 @@ const vector<LogicalType> LogicalType::AllTypes() {
 	    LogicalType::HUGEINT,  LogicalTypeId::DECIMAL, LogicalType::UTINYINT,     LogicalType::USMALLINT,
 	    LogicalType::UINTEGER, LogicalType::UBIGINT,   LogicalType::TIME,         LogicalTypeId::LIST,
 	    LogicalTypeId::STRUCT, LogicalType::TIME_TZ,   LogicalType::TIMESTAMP_TZ, LogicalTypeId::MAP,
-	    LogicalType::UUID};
+	    LogicalType::UUID, 	   LogicalType::VARCHAR,   LogicalType::GEOGRAPHY};
 	return types;
 }
 
@@ -284,6 +288,8 @@ string TypeIdToString(PhysicalType type) {
 		return "LARGE_BINARY";
 	case PhysicalType::LARGE_LIST:
 		return "LARGE_LIST";
+	case PhysicalType::GEOGRAPHY:
+		return "GEOGRAPHY";
 	case PhysicalType::UNKNOWN:
 		return "UNKNOWN";
 	}
@@ -327,6 +333,8 @@ idx_t GetTypeIdSize(PhysicalType type) {
 		return 0; // no own payload
 	case PhysicalType::LIST:
 		return sizeof(list_entry_t); // offset + len
+	case PhysicalType::GEOGRAPHY:
+		return sizeof(Geography);
 	default:
 		throw InternalException("Invalid PhysicalType for GetTypeIdSize");
 	}
@@ -428,6 +436,8 @@ string LogicalTypeIdToString(LogicalTypeId id) {
 		return "ENUM";
 	case LogicalTypeId::USER:
 		return "USER";
+	case LogicalTypeId::GEOGRAPHY:
+		return "GEOGRAPHY";
 	}
 	return "UNDEFINED";
 }
@@ -549,6 +559,8 @@ LogicalTypeId TransformStringToLogicalType(const string &str) {
 		return LogicalTypeId::TIMESTAMP_TZ;
 	} else if (lower_str == "timetz") {
 		return LogicalTypeId::TIME_TZ;
+	} else if (lower_str == "geography") {
+		return LogicalTypeId::GEOGRAPHY;
 	} else {
 		// This is a User Type, at this point we don't know if its one of the User Defined Types or an error
 		// It is checked in the binder

@@ -27,6 +27,8 @@
 #include "duckdb/common/types/cast_helpers.hpp"
 #include "duckdb/common/types/hash.hpp"
 
+#include "duckdb/common/spatial/WKTWriter.hpp"
+
 namespace duckdb {
 
 Value::Value(LogicalType type) : type_(move(type)), is_null(true) {
@@ -69,17 +71,23 @@ Value::Value(string val) : type_(LogicalType::VARCHAR), is_null(false), str_valu
 	}
 }
 
+Value::Value(const Geography& val) : type_(LogicalType::GEOGRAPHY), is_null(false), geography(new Geography(val)) {}
+Value::Value(Geography&& val) : type_(LogicalType::GEOGRAPHY), is_null(false), geography(new Geography(move(val))) {}
+
 Value::~Value() {
 }
 
 Value::Value(const Value &other)
     : type_(other.type_), is_null(other.is_null), value_(other.value_), str_value(other.str_value),
       struct_value(other.struct_value), list_value(other.list_value) {
+	if (other.geography) {
+		geography.reset(new Geography(*other.geography));
+	}
 }
 
 Value::Value(Value &&other) noexcept
     : type_(move(other.type_)), is_null(other.is_null), value_(other.value_), str_value(move(other.str_value)),
-      struct_value(move(other.struct_value)), list_value(move(other.list_value)) {
+      struct_value(move(other.struct_value)), list_value(move(other.list_value)), geography(move(other.geography)) {
 }
 
 Value &Value::operator=(const Value &other) {
@@ -89,6 +97,9 @@ Value &Value::operator=(const Value &other) {
 	str_value = other.str_value;
 	struct_value = other.struct_value;
 	list_value = other.list_value;
+	if (other.geography) {
+		geography.reset(new Geography(*other.geography));
+	}
 	return *this;
 }
 
@@ -99,6 +110,7 @@ Value &Value::operator=(Value &&other) noexcept {
 	str_value = move(other.str_value);
 	struct_value = move(other.struct_value);
 	list_value = move(other.list_value);
+	geography = move(other.geography);
 	return *this;
 }
 
@@ -598,6 +610,14 @@ Value Value::INTERVAL(interval_t interval) {
 	return Value::INTERVAL(interval.months, interval.days, interval.micros);
 }
 
+Value Value::GEOGRAPHY(const Geography &geography) {
+	return Value(Geography::CopyDeep(geography));
+}
+
+Value Value::GEOGRAPHY(Geography &&geography) {
+	return Value(std::move(geography));
+}
+
 //===--------------------------------------------------------------------===//
 // CreateValue
 //===--------------------------------------------------------------------===//
@@ -764,6 +784,8 @@ T Value::GetValueInternal() const {
 			throw InternalException("Invalid Internal Type for ENUMs");
 		}
 	}
+	case LogicalTypeId::GEOGRAPHY:
+		return Cast::Operation<Geography, T>(*geography);
 
 	default:
 		throw NotImplementedException("Unimplemented type \"%s\" for GetValue()", type_.ToString());
@@ -1061,6 +1083,12 @@ interval_t Value::GetValueUnsafe() const {
 	return value_.interval;
 }
 
+template <>
+Geography Value::GetValueUnsafe() const {
+	D_ASSERT(type_.InternalType() == PhysicalType::GEOGRAPHY);
+	return *geography;
+}
+
 //===--------------------------------------------------------------------===//
 // GetReferenceUnsafe
 //===--------------------------------------------------------------------===//
@@ -1154,6 +1182,12 @@ interval_t &Value::GetReferenceUnsafe() {
 	return value_.interval;
 }
 
+template <>
+Geography &Value::GetReferenceUnsafe() {
+	D_ASSERT(type_.InternalType() == PhysicalType::INTERVAL);
+	return *geography;
+}
+
 //===--------------------------------------------------------------------===//
 // Hash
 //===--------------------------------------------------------------------===//
@@ -1205,6 +1239,9 @@ hash_t Value::Hash() const {
 			hash ^= entry.Hash();
 		}
 		return hash;
+	}
+	case PhysicalType::GEOGRAPHY: {
+		return 1;
 	}
 	default:
 		throw InternalException("Unimplemented type for value hash");
@@ -1339,6 +1376,13 @@ string Value::ToString() const {
 		}
 		return values_insert_order.GetValue(enum_idx).ToString();
 	}
+	case LogicalTypeId::GEOGRAPHY: {
+		if (geography) {
+			return WKTWriter::GeogToWkt(*geography);
+		} else {
+			throw InternalException("Dereferencing nullptr Geography for Value::ToString()");
+		}
+	}
 	default:
 		throw NotImplementedException("Unimplemented type for printing: %s", type_.ToString());
 	}
@@ -1398,6 +1442,12 @@ double DoubleValue::Get(const Value &value) {
 const string &StringValue::Get(const Value &value) {
 	D_ASSERT(value.type().InternalType() == PhysicalType::VARCHAR);
 	return value.str_value;
+}
+
+const Geography &GeographyValue::Get(const Value &value) {
+	D_ASSERT(value.type().InternalType() == PhysicalType::GEOGRAPHY);
+	D_ASSERT(value.geography);
+	return *value.geography;
 }
 
 date_t DateValue::Get(const Value &value) {

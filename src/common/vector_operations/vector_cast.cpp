@@ -754,6 +754,19 @@ static bool StructCastSwitch(Vector &source, Vector &result, idx_t count, string
 	}
 }
 
+static bool GeographyCastSwitch(Vector &source, Vector &result, idx_t count, string *error_message) {
+	// now switch on the result type
+	switch (result.GetType().id()) {
+	case LogicalTypeId::VARCHAR:
+		// Geography to varchar
+		VectorStringCast<Geography, duckdb::CastFromGeography>(source, result, count);
+		break;
+	default:
+		return TryVectorNullCast(source, result, count, error_message);
+	}
+	return true;
+}
+
 bool VectorOperations::TryCast(Vector &source, Vector &result, idx_t count, string *error_message, bool strict) {
 	D_ASSERT(source.GetType() != result.GetType());
 	// first switch on source type
@@ -821,6 +834,8 @@ bool VectorOperations::TryCast(Vector &source, Vector &result, idx_t count, stri
 		return ListCastSwitch(source, result, count, error_message);
 	case LogicalTypeId::ENUM:
 		return EnumCastSwitch(source, result, count, error_message, strict);
+	case LogicalTypeId::GEOGRAPHY:
+		return GeographyCastSwitch(source, result, count, error_message);
 	default:
 		return TryVectorNullCast(source, result, count, error_message);
 	}
