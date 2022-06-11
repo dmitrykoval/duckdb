@@ -7,8 +7,6 @@
 #include "duckdb/common/pair.hpp"
 #include "duckdb/common/printer.hpp"
 #include "duckdb/common/serializer.hpp"
-#include "duckdb/common/to_string.hpp"
-#include "duckdb/common/types/chunk_collection.hpp"
 #include "duckdb/common/types/null_value.hpp"
 #include "duckdb/common/types/sel_cache.hpp"
 #include "duckdb/common/types/vector_cache.hpp"
@@ -198,7 +196,7 @@ void Vector::Initialize(bool zero_data, idx_t capacity) {
 		auto struct_buffer = make_unique<VectorStructBuffer>(type, capacity);
 		auxiliary = move(struct_buffer);
 	} else if (internal_type == PhysicalType::LIST) {
-		auto list_buffer = make_unique<VectorListBuffer>(type);
+		auto list_buffer = make_unique<VectorListBuffer>(type, capacity);
 		auxiliary = move(list_buffer);
 	}
 	auto type_size = GetTypeIdSize(internal_type);
@@ -473,8 +471,10 @@ Value Vector::GetValue(idx_t index) const {
 			return Value::ENUM(((uint16_t *)data)[index], GetType());
 		case PhysicalType::UINT32:
 			return Value::ENUM(((uint32_t *)data)[index], GetType());
+		case PhysicalType::UINT64: //  DEDUP_POINTER_ENUM
+			return Value::ENUM(((uint64_t *)data)[index], GetType());
 		default:
-			throw InternalException("ENUM can only have unsigned integers (except UINT64) as physical types");
+			throw InternalException("ENUM can only have unsigned integers as physical types");
 		}
 	}
 	case LogicalTypeId::HASH:
@@ -491,6 +491,11 @@ Value Vector::GetValue(idx_t index) const {
 		auto str = ((string_t *)data)[index];
 		return Value(str.GetString());
 	}
+	case LogicalTypeId::JSON: {
+		auto str = ((string_t *)data)[index];
+		return Value::JSON(str.GetString());
+	}
+	case LogicalTypeId::AGGREGATE_STATE:
 	case LogicalTypeId::BLOB: {
 		auto str = ((string_t *)data)[index];
 		return Value::BLOB((const_data_ptr_t)str.GetDataUnsafe(), str.GetSize());
@@ -623,7 +628,7 @@ void Vector::Normalify(idx_t count) {
 		break;
 	case VectorType::DICTIONARY_VECTOR: {
 		// create a new flat vector of this type
-		Vector other(GetType());
+		Vector other(GetType(), count);
 		// now copy the data of this vector to the other vector, removing the selection vector in the process
 		VectorOperations::Copy(*this, other, count, 0, 0);
 		// create a reference to the data in the other vector
@@ -780,7 +785,7 @@ void Vector::Orrify(idx_t count, VectorData &data) {
 		break;
 	default:
 		Normalify(count);
-		data.sel = FlatVector::IncrementalSelectionVector(count, data.owned_sel);
+		data.sel = FlatVector::IncrementalSelectionVector();
 		data.data = FlatVector::GetData(*this);
 		data.validity = FlatVector::Validity(*this);
 		break;
@@ -929,6 +934,10 @@ void Vector::Deserialize(idx_t count, Deserializer &source) {
 
 void Vector::SetVectorType(VectorType vector_type_p) {
 	this->vector_type = vector_type_p;
+	if (TypeIsConstantSize(GetType().InternalType()) &&
+	    (GetVectorType() == VectorType::CONSTANT_VECTOR || GetVectorType() == VectorType::FLAT_VECTOR)) {
+		auxiliary.reset();
+	}
 	if (vector_type == VectorType::CONSTANT_VECTOR && GetType().InternalType() == PhysicalType::STRUCT) {
 		auto &entries = StructVector::GetEntries(*this);
 		for (auto &entry : entries) {
@@ -971,8 +980,7 @@ void Vector::UTFVerify(const SelectionVector &sel, idx_t count) {
 }
 
 void Vector::UTFVerify(idx_t count) {
-	SelectionVector owned_sel;
-	auto flat_sel = FlatVector::IncrementalSelectionVector(count, owned_sel);
+	auto flat_sel = FlatVector::IncrementalSelectionVector();
 
 	UTFVerify(*flat_sel, count);
 }
@@ -996,31 +1004,7 @@ void Vector::Verify(const SelectionVector &sel, idx_t count) {
 	    (GetVectorType() == VectorType::CONSTANT_VECTOR || GetVectorType() == VectorType::FLAT_VECTOR)) {
 		D_ASSERT(!auxiliary);
 	}
-	if (GetType().InternalType() == PhysicalType::DOUBLE) {
-		// verify that there are no INF or NAN values
-		switch (GetVectorType()) {
-		case VectorType::CONSTANT_VECTOR: {
-			auto dbl = ConstantVector::GetData<double>(*this);
-			if (!ConstantVector::IsNull(*this)) {
-				D_ASSERT(Value::DoubleIsValid(*dbl));
-			}
-			break;
-		}
-		case VectorType::FLAT_VECTOR: {
-			auto doubles = FlatVector::GetData<double>(*this);
-			for (idx_t i = 0; i < count; i++) {
-				auto oidx = sel.get_index(i);
-				if (validity.RowIsValid(oidx)) {
-					D_ASSERT(Value::DoubleIsValid(doubles[oidx]));
-				}
-			}
-			break;
-		}
-		default:
-			break;
-		}
-	}
-	if (GetType().id() == LogicalTypeId::VARCHAR) {
+	if (GetType().id() == LogicalTypeId::VARCHAR || GetType().id() == LogicalTypeId::JSON) {
 		// verify that there are no '\0' bytes in string values
 		switch (GetVectorType()) {
 		case VectorType::FLAT_VECTOR: {
@@ -1114,8 +1098,7 @@ void Vector::Verify(const SelectionVector &sel, idx_t count) {
 }
 
 void Vector::Verify(idx_t count) {
-	SelectionVector owned_sel;
-	auto flat_sel = FlatVector::IncrementalSelectionVector(count, owned_sel);
+	auto flat_sel = FlatVector::IncrementalSelectionVector();
 	Verify(*flat_sel, count);
 }
 
@@ -1144,17 +1127,6 @@ void ConstantVector::SetNull(Vector &vector, bool is_null) {
 	}
 }
 
-const SelectionVector *FlatVector::IncrementalSelectionVector(idx_t count, SelectionVector &owned_sel) {
-	if (count <= STANDARD_VECTOR_SIZE) {
-		return FlatVector::IncrementalSelectionVector();
-	}
-	owned_sel.Initialize(count);
-	for (idx_t i = 0; i < count; i++) {
-		owned_sel.set_index(i, i);
-	}
-	return &owned_sel;
-}
-
 const SelectionVector *ConstantVector::ZeroSelectionVector(idx_t count, SelectionVector &owned_sel) {
 	if (count <= STANDARD_VECTOR_SIZE) {
 		return ConstantVector::ZeroSelectionVector();
@@ -1167,7 +1139,6 @@ const SelectionVector *ConstantVector::ZeroSelectionVector(idx_t count, Selectio
 }
 
 void ConstantVector::Reference(Vector &vector, Vector &source, idx_t position, idx_t count) {
-	D_ASSERT(position < count);
 	auto &source_type = source.GetType();
 	switch (source_type.InternalType()) {
 	case PhysicalType::LIST: {
@@ -1215,7 +1186,7 @@ void ConstantVector::Reference(Vector &vector, Vector &source, idx_t position, i
 		auto &source_entries = StructVector::GetEntries(source);
 		auto &target_entries = StructVector::GetEntries(vector);
 		for (idx_t i = 0; i < source_entries.size(); i++) {
-			ConstantVector::Reference(*target_entries[i], *source_entries[i], position, count);
+			ConstantVector::Reference(*target_entries[i], *source_entries[i], struct_index, count);
 		}
 		vector.SetVectorType(VectorType::CONSTANT_VECTOR);
 		break;
@@ -1247,7 +1218,7 @@ string_t StringVector::AddString(Vector &vector, const string &data) {
 }
 
 string_t StringVector::AddString(Vector &vector, string_t data) {
-	D_ASSERT(vector.GetType().id() == LogicalTypeId::VARCHAR);
+	D_ASSERT(vector.GetType().id() == LogicalTypeId::VARCHAR || vector.GetType().id() == LogicalTypeId::JSON);
 	if (data.IsInlined()) {
 		// string will be inlined: no need to store in string heap
 		return data;

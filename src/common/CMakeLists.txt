@@ -15,13 +15,13 @@ add_library_unity(
   allocator.cpp
   arrow_wrapper.cpp
   assert.cpp
-  radix.cpp
   compressed_file_system.cpp
   constants.cpp
   checksum.cpp
   cycle_counter.cpp
   exception.cpp
   exception_format_value.cpp
+  field_writer.cpp
   file_buffer.cpp
   file_system.cpp
   gzip_file_system.cpp
@@ -30,6 +30,8 @@ add_library_unity(
   local_file_system.cpp
   printer.cpp
   progress_bar.cpp
+  re2_regex.cpp
+  random_engine.cpp
   serializer.cpp
   string_util.cpp
   symbols.cpp

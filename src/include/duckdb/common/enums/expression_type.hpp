@@ -117,6 +117,7 @@ enum class ExpressionType : uint8_t {
 	ARRAY_SLICE = 154,
 	STRUCT_EXTRACT = 155,
 	ARRAY_CONSTRUCTOR = 156,
+	ARROW = 157,
 
 	// -----------------------------
 	// Subquery IN/EXISTS
@@ -196,8 +197,11 @@ enum class ExpressionClass : uint8_t {
 	BOUND_EXPRESSION = 50
 };
 
-string ExpressionTypeToString(ExpressionType type);
+DUCKDB_API string ExpressionTypeToString(ExpressionType type);
 string ExpressionTypeToOperator(ExpressionType type);
+
+// Operator String to ExpressionType (e.g. + => OPERATOR_ADD)
+ExpressionType OperatorToExpressionType(const string &op);
 
 //! Negate a comparison expression, turning e.g. = into !=, or < into >=
 ExpressionType NegateComparisionExpression(ExpressionType type);

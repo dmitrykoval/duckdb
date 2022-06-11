@@ -8,6 +8,10 @@ if(POLICY CMP0051)
   cmake_policy(SET CMP0051 NEW)
 endif()
 
+if(POLICY CMP0054)
+  cmake_policy(SET CMP0054 NEW)
+endif()
+
 project(DuckDB)
 
 find_package(Threads REQUIRED)
@@ -29,6 +33,11 @@ set(CMAKE_MACOSX_RPATH 1)
 find_program(CCACHE_PROGRAM ccache)
 if(CCACHE_PROGRAM)
   set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE "${CCACHE_PROGRAM}")
+else()
+  find_program(CCACHE_PROGRAM sccache)
+  if(CCACHE_PROGRAM)
+    set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE "${CCACHE_PROGRAM}")
+  endif()
 endif()
 
 # Determine install paths
@@ -59,7 +68,14 @@ foreach(p LIB BIN INCLUDE CMAKE)
   endif()
 endforeach()
 
-
+# This option allows --gc-sections flag during extension linking to discard any unused functions or data
+if (EXTENSION_STATIC_BUILD AND "${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
+  if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -ffunction-sections -fdata-sections")
+  elseif(WIN32 AND MVSC)
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /Gy")
+  endif()
+endif()
 
 option(DISABLE_UNITY "Disable unity builds." FALSE)
 
@@ -124,6 +140,11 @@ elseif(${ENABLE_SANITIZER})
   endif()
 endif()
 
+
+if(APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "arm64")
+  set(DISABLE_VPTR_SANITIZER TRUE)
+endif()
+
 if(${ENABLE_UBSAN})
   if(${ENABLE_THREAD_SANITIZER})
     message(
@@ -148,6 +169,14 @@ endif()
 option(EXPLICIT_EXCEPTIONS "Explicitly enable C++ exceptions." FALSE)
 if(${EXPLICIT_EXCEPTIONS})
   set(CXX_EXTRA "${CXX_EXTRA} -fexceptions")
+endif()
+
+option(OSX_BUILD_UNIVERSAL "Build both architectures on OSX and create a single binary containing both." FALSE)
+if (OSX_BUILD_UNIVERSAL)
+  if (NOT APPLE)
+    error("This only makes sense on OSX")
+  endif()
+  SET(CMAKE_OSX_ARCHITECTURES "x86_64;arm64" CACHE STRING "Build architectures for Mac OS X" FORCE)
 endif()
 
 set(SUN FALSE)
@@ -201,6 +230,13 @@ option(AMALGAMATION_BUILD
        "Build from the amalgamation files, rather than from the normal sources."
        FALSE)
 
+option(BUILD_MAIN_DUCKDB_LIBRARY
+        "Build the main duckdb library and executable."
+        TRUE)
+option(EXTENSION_STATIC_BUILD
+        "Extension build linking statically with DuckDB. Required for building linux loadable extensions."
+        FALSE)
+
 option(BUILD_ICU_EXTENSION "Build the ICU extension." FALSE)
 option(BUILD_PARQUET_EXTENSION "Build the Parquet extension." FALSE)
 option(BUILD_TPCH_EXTENSION "Build the TPC-H extension." FALSE)
@@ -208,10 +244,14 @@ option(BUILD_TPCDS_EXTENSION "Build the TPC-DS extension." FALSE)
 option(BUILD_FTS_EXTENSION "Build the FTS extension." FALSE)
 option(BUILD_HTTPFS_EXTENSION "Build the HTTP File System extension." FALSE)
 option(BUILD_VISUALIZER_EXTENSION "Build the profiler-output visualizer extension." FALSE)
+option(BUILD_JSON_EXTENSION "Build the JSON extension." FALSE)
+option(BUILD_EXCEL_EXTENSION "Build the excel extension." FALSE)
 option(BUILD_SPATIAL_EXTENSION "Build the Geospatial extension." FALSE)
 option(BUILD_BENCHMARKS "Enable building of the benchmark suite." FALSE)
-option(BUILD_SQLSMITH "Enable building of SQLSmith." FALSE)
+option(BUILD_SQLSMITH_EXTENSION "Enable building of the SQLSmith extension." FALSE)
 option(BUILD_TPCE "Enable building of the TPC-E tool." FALSE)
+option(DISABLE_BUILTIN_EXTENSIONS "Disable linking extensions." FALSE)
+option(BUILD_SUBSTRAIT_EXTENSION "Enable building of Substrait Extension." FALSE)
 option(JDBC_DRIVER "Build the DuckDB JDBC driver" FALSE)
 option(BUILD_ODBC_DRIVER "Build the DuckDB ODBC driver" FALSE)
 option(BUILD_PYTHON "Build the DuckDB Python extension" FALSE)
@@ -239,6 +279,12 @@ if(${BUILD_RDTSC})
   add_compile_definitions(RDTSC)
 endif()
 
+if (NOT BUILD_MAIN_DUCKDB_LIBRARY)
+  set(BUILD_UNITTESTS FALSE)
+  set(BUILD_SHELL FALSE)
+  set(DISABLE_BUILTIN_EXTENSIONS TRUE)
+endif()
+
 if(BUILD_PYTHON
    OR BUILD_R
    OR CONFIGURE_R
@@ -252,10 +298,11 @@ if(BUILD_PYTHON)
   set(BUILD_TPCH_EXTENSION TRUE)
   set(BUILD_TPCDS_EXTENSION TRUE)
   set(BUILD_FTS_EXTENSION TRUE)
+  set(BUILD_EXCEL_EXTENSION TRUE)
 endif()
 
 if(BUILD_SQLSMITH)
-  set(BUILD_TPCH_EXTENSION TRUE)
+  set(BUILD_SQLSMITH_EXTENSION TRUE)
 endif()
 
 if(TREAT_WARNINGS_AS_ERRORS)
@@ -349,6 +396,7 @@ include_directories(src/include)
 include_directories(third_party/fmt/include)
 include_directories(third_party/hyperloglog)
 include_directories(third_party/fastpforlib)
+include_directories(third_party/fast_float)
 include_directories(third_party/re2)
 include_directories(third_party/miniz)
 include_directories(third_party/utf8proc/include)
@@ -442,6 +490,10 @@ function(add_extension_definitions)
     add_definitions(-DDUCKDB_TEST_REMOTE_INSTALL="${TEST_REMOTE_INSTALL}")
   endif()
 
+  if(${DISABLE_BUILTIN_EXTENSIONS})
+    add_definitions(-DDISABLE_BUILTIN_EXTENSIONS=${DISABLE_BUILTIN_EXTENSIONS})
+  endif()
+
   if(${BUILD_ICU_EXTENSION})
     include_directories(${PROJECT_SOURCE_DIR}/extension/icu/include)
     add_definitions(-DBUILD_ICU_EXTENSION=${BUILD_ICU_EXTENSION})
@@ -455,6 +507,11 @@ function(add_extension_definitions)
   if(${BUILD_TPCH_EXTENSION})
     include_directories(${PROJECT_SOURCE_DIR}/extension/tpch/include)
     add_definitions(-DBUILD_TPCH_EXTENSION=${BUILD_TPCH_EXTENSION})
+  endif()
+
+  if(${BUILD_SUBSTRAIT_EXTENSION})
+    include_directories(${PROJECT_SOURCE_DIR}/extension/substrait/include)
+    add_definitions(-DBUILD_SUBSTRAIT_EXTENSION=${BUILD_SUBSTRAIT_EXTENSION})
   endif()
 
   if(${BUILD_TPCDS_EXTENSION})
@@ -478,6 +535,21 @@ function(add_extension_definitions)
     add_definitions(-DBUILD_VISUALIZER_EXTENSION=${BUILD_VISUALIZER_EXTENSION})
   endif()
 
+  if(${BUILD_JSON_EXTENSION})
+    include_directories(${PROJECT_SOURCE_DIR}/extension/json/include)
+    add_definitions(-DBUILD_JSON_EXTENSION=${BUILD_JSON_EXTENSION})
+  endif()
+
+  if(${BUILD_EXCEL_EXTENSION})
+    include_directories(${PROJECT_SOURCE_DIR}/extension/excel/include)
+    add_definitions(-DBUILD_EXCEL_EXTENSION=${BUILD_EXCEL_EXTENSION})
+  endif()
+
+  if(${BUILD_SQLSMITH_EXTENSION})
+    include_directories(${PROJECT_SOURCE_DIR}/extension/sqlsmith/include)
+    add_definitions(-DBUILD_SQLSMITH_EXTENSION=${BUILD_SQLSMITH_EXTENSION})
+  endif()
+
   if(${BUILD_SPATIAL_EXTENSION})
     include_directories(${PROJECT_SOURCE_DIR}/extension/spatial/src/include)
     add_definitions(-BUILD_SPATIAL_EXTENSION=${BUILD_SPATIAL_EXTENSION})
@@ -497,6 +569,10 @@ function(add_extension_dependencies LIBRARY)
     add_dependencies(${LIBRARY} tpch_extension)
   endif()
 
+  if(${BUILD_SUBSTRAIT_EXTENSION})
+    add_dependencies(${LIBRARY} substrait_extension)
+  endif()
+
   if(${BUILD_TPCDS_EXTENSION})
     add_dependencies(${LIBRARY} tpcds_extension)
   endif()
@@ -513,12 +589,28 @@ function(add_extension_dependencies LIBRARY)
     add_dependencies(${LIBRARY} visualizer_extension)
   endif()
 
+  if(${BUILD_JSON_EXTENSION})
+    add_dependencies(${LIBRARY} json_extension)
+  endif()
+
+  if(${BUILD_EXCEL_EXTENSION})
+    add_dependencies(${LIBRARY} excel_extension)
+  endif()
+
+  if(${BUILD_SQLSMITH_EXTENSION})
+    add_dependencies(${LIBRARY} sqlsmith_extension)
+  endif()
+
   if(${BUILD_SPATIAL_EXTENSION})
     add_dependencies(${LIBRARY} spatial_extension)
   endif()
 endfunction()
 
 function(link_extension_libraries LIBRARY)
+  if(${DISABLE_BUILTIN_EXTENSIONS})
+    return()
+  endif()
+
   if(${BUILD_PARQUET_EXTENSION})
     target_link_libraries(${LIBRARY} parquet_extension)
   endif()
@@ -529,6 +621,10 @@ function(link_extension_libraries LIBRARY)
 
   if(${BUILD_TPCH_EXTENSION})
     target_link_libraries(${LIBRARY} tpch_extension)
+  endif()
+
+  if(${BUILD_SUBSTRAIT_EXTENSION})
+    target_link_libraries(${LIBRARY} substrait_extension)
   endif()
 
   if(${BUILD_TPCDS_EXTENSION})
@@ -546,6 +642,18 @@ function(link_extension_libraries LIBRARY)
 
   if(${BUILD_VISUALIZER_EXTENSION})
     target_link_libraries(${LIBRARY} visualizer_extension)
+  endif()
+
+  if(${BUILD_JSON_EXTENSION})
+    target_link_libraries(${LIBRARY} json_extension)
+  endif()
+
+  if(${BUILD_EXCEL_EXTENSION})
+    target_link_libraries(${LIBRARY} excel_extension)
+  endif()
+
+  if(${BUILD_SQLSMITH_EXTENSION})
+    target_link_libraries(${LIBRARY} sqlsmith_extension)
   endif()
 
   if(${BUILD_SPATIAL_EXTENSION})
@@ -579,8 +687,35 @@ function(build_loadable_extension_directory NAME OUTPUT_DIRECTORY)
   add_library(${TARGET_NAME} SHARED ${FILES})
   set_target_properties(${TARGET_NAME} PROPERTIES OUTPUT_NAME ${NAME})
   set_target_properties(${TARGET_NAME} PROPERTIES PREFIX "")
+
+  # Resolution of DuckDB symbols in loadable extensions is done in different ways
+  # MacOS:    The -undefined dynamic_lookup signals CLANG to ignore any missing DuckDB symbols. Because on MacOS dlopen
+  #           is called with the RTLD_GLOBAL flag by default, duckdb symbols are available when the extension is loaded.
+  # Linux:    DuckDB needs to be linked statically to each extension because RTLD_LOCAL is the default on linux. The
+  #           EXTENSION_STATIC_BUILD should be set for this.
+  # Windows:  For windows, delay loading could be used to achieve similar behaviour as MacOS, but since this requires
+  #           setting the _declspec header for every function used from an extension, we have also opted for the
+  #           EXTENSION_STATIC_BUILD approach
+  if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
+    set_target_properties(${TARGET_NAME} PROPERTIES LINK_FLAGS "-undefined dynamic_lookup")
+  endif()
+
+  if (EXTENSION_STATIC_BUILD)
+    if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
+      target_link_libraries(${TARGET_NAME} duckdb_static ${DUCKDB_EXTRA_LINK_FLAGS} -Wl,--gc-sections -Wl,--exclude-libs,ALL)
+    elseif (WIN32)
+      target_link_libraries(${TARGET_NAME} duckdb_static ${DUCKDB_EXTRA_LINK_FLAGS})
+    else()
+      error("EXTENSION static build is only intended for Linux and Windows on MVSC")
+    endif()
+  else()
+    if (WIN32)
+      target_link_libraries(${TARGET_NAME} duckdb ${DUCKDB_EXTRA_LINK_FLAGS})
+    endif()
+  endif()
+
+
   target_compile_definitions(${TARGET_NAME} PUBLIC -DDUCKDB_BUILD_LOADABLE_EXTENSION)
-  target_link_libraries(${TARGET_NAME} duckdb ${DUCKDB_EXTRA_LINK_FLAGS})
   set_target_properties(${TARGET_NAME} PROPERTIES SUFFIX
           ".duckdb_extension")
 
@@ -623,9 +758,10 @@ if(${EXPORT_DLL_SYMBOLS})
   add_definitions(-DDUCKDB_BUILD_LIBRARY)
 endif()
 
-add_subdirectory(src)
-
-add_subdirectory(tools)
+if (BUILD_MAIN_DUCKDB_LIBRARY)
+  add_subdirectory(src)
+  add_subdirectory(tools)
+endif()
 
 add_subdirectory(extension)
 
@@ -677,4 +813,9 @@ if(EXISTS ${CMAKE_CONFIG_TEMPLATE} AND EXISTS ${CMAKE_CONFIG_VERSION_TEMPLATE})
     DESTINATION "${INSTALL_CMAKE_DIR}")
 endif()
 
+endif()
+
+# build out-of-tree extensions on demand
+if(NOT "${EXTERNAL_EXTENSION_DIRECTORY}" STREQUAL "")
+  add_subdirectory(${EXTERNAL_EXTENSION_DIRECTORY} external_extension_build)
 endif()

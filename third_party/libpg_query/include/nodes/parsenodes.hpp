@@ -287,6 +287,7 @@ typedef struct PGFuncCall {
 	PGList *args;             /* the arguments (list of exprs) */
 	PGList *agg_order;        /* ORDER BY (list of PGSortBy) */
 	PGNode *agg_filter;       /* FILTER clause, if any */
+	bool export_state;        /* EXPORT_STATE clause, if any */
 	bool agg_within_group;    /* ORDER BY appeared in WITHIN GROUP */
 	bool agg_star;            /* argument was really '*' */
 	bool agg_distinct;        /* arguments were labeled DISTINCT */
@@ -491,6 +492,12 @@ typedef struct PGRangeFunction {
 	PGNode *sample;   /* sample options (if any) */
 } PGRangeFunction;
 
+/* Category of the column */
+typedef enum ColumnCategory {
+	COL_STANDARD,	/* regular column */
+	COL_GENERATED	/* generated (VIRTUAL|STORED) */
+}	ColumnCategory;
+
 /*
  * PGColumnDef - column definition (used in various creates)
  *
@@ -509,8 +516,9 @@ typedef struct PGRangeFunction {
  * the item and set raw_default instead.  PG_CONSTR_DEFAULT items
  * should not appear in any subsequent processing.
  */
+
 typedef struct PGColumnDef {
-	PGNodeTag type;
+	PGNodeTag type;               /* ENSURES COMPATIBILITY WITH 'PGNode' - has to be first line */
 	char *colname;                /* name of column */
 	PGTypeName *typeName;         /* type of column */
 	int inhcount;                 /* number of times column is inherited */
@@ -529,6 +537,7 @@ typedef struct PGColumnDef {
 	PGList *constraints;          /* other constraints on column */
 	PGList *fdwoptions;           /* per-column FDW options */
 	int location;                 /* parse location, or -1 if none/unknown */
+	ColumnCategory category;	  /* category of the column */
 } PGColumnDef;
 
 /*
@@ -1272,6 +1281,7 @@ typedef enum PGObjectType {
 	PG_OBJECT_FOREIGN_SERVER,
 	PG_OBJECT_FOREIGN_TABLE,
 	PG_OBJECT_FUNCTION,
+	PG_OBJECT_TABLE_MACRO,
 	PG_OBJECT_INDEX,
 	PG_OBJECT_LANGUAGE,
 	PG_OBJECT_LARGEOBJECT,
@@ -1576,7 +1586,10 @@ typedef enum PGConstrType /* types of constraints */
   PG_CONSTR_ATTR_NOT_DEFERRABLE,
   PG_CONSTR_ATTR_DEFERRED,
   PG_CONSTR_ATTR_IMMEDIATE,
-  PG_CONSTR_COMPRESSION} PGConstrType;
+  PG_CONSTR_COMPRESSION,
+  PG_CONSTR_GENERATED_VIRTUAL,
+  PG_CONSTR_GENERATED_STORED,
+  } PGConstrType;
 
 /* Foreign key action codes */
 #define PG_FKCONSTR_ACTION_NOACTION 'a'
@@ -1673,6 +1686,8 @@ typedef struct PGCreateFunctionStmt {
 	PGRangeVar *name;
 	PGList *params;
 	PGNode *function;
+  	PGNode *query;
+	char relpersistence;
 } PGCreateFunctionStmt;
 
 /* ----------------------
@@ -1986,7 +2001,7 @@ typedef struct PGSampleOptions {
 } PGSampleOptions;
 
 /* ----------------------
- *              Limit Percentage
+ *      Limit Percentage
  * ----------------------
  */
 typedef struct PGLimitPercent {
@@ -1995,13 +2010,13 @@ typedef struct PGLimitPercent {
 } PGLimitPercent;
 
 /* ----------------------
- *		Lambda Function
+ *		Lambda Function (or Arrow Operator)
  * ----------------------
  */
 typedef struct PGLambdaFunction {
 	PGNodeTag type;
-	PGList *parameters;          /* list of input parameters */
-	PGNode *function;            /* lambda expression */
+	PGNode *lhs;                 /* list of input parameters */
+	PGNode *rhs;                 /* lambda expression */
 	int location;                /* token location, or -1 if unknown */
 } PGLambdaFunction;
 
@@ -2016,16 +2031,20 @@ typedef struct PGPositionalReference {
 } PGPositionalReference;
 
 /* ----------------------
- *		Enum Statement
+ *		Type Statement
  * ----------------------
  */
 
-typedef struct PGCreateEnumStmt
+typedef enum { PG_NEWTYPE_NONE, PG_NEWTYPE_ENUM, PG_NEWTYPE_ALIAS } PGNewTypeKind;
+
+typedef struct PGCreateTypeStmt
 {
 	PGNodeTag		type;
+	PGNewTypeKind	kind;
 	PGList	   *typeName;		/* qualified name (list of Value strings) */
 	PGList	   *vals;			/* enum values (list of Value strings) */
-} PGCreateEnumStmt;
+	PGTypeName *ofType;			/* original type of alias name */
+} PGCreateTypeStmt;
 
 
 

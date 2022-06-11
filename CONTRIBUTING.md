@@ -16,6 +16,11 @@ This project and everyone participating in it is governed by a [Code of Conduct]
 * Open a new GitHub pull request with the patch.
 * Ensure the PR description clearly describes the problem and solution. Include the relevant issue number if applicable.
 
+## Outside Contributors
+* Discuss your intended changes with the core team on Github
+* Announce that you are working or want to work on a specific issue
+* Avoid large pull requests - they are much less likely to be merged as they are incredibly hard to review
+
 ## Pull Requests
 * Do not commit/push directly to the master branch. Instead, create a fork and file a pull request.
 * When maintaining a branch, merge frequently with the master.
@@ -31,7 +36,7 @@ This project and everyone participating in it is governed by a [Code of Conduct]
 
 ## Testing
 * Unit tests can be written either using the sqllogictest framework (`.test` files) or in C++ directly. We **strongly** prefer tests to be written using the sqllogictest framework. Only write tests in C++ if you absolutely need to (e.g. when testing concurrent connections or other exotic behavior).
-* Documentation for the testing framework can be found [here](https://duckdb.org/docs/dev/testing).
+* Documentation for the testing framework can be found [here](https://duckdb.org/dev/testing).
 * Write many tests.
 * Test with different types, especially numerics, strings and complex nested types.
 * Try to test unexpected/incorrect usage as well, instead of only the happy path.

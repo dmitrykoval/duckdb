@@ -79,16 +79,16 @@ TEST_CASE("Test simple relation API", "[relation_api]") {
 	REQUIRE_NOTHROW(result = proj->Execute());
 	REQUIRE(CHECK_COLUMN(result, 0, {2, 4}));
 	// we can check the column names
-	REQUIRE(proj->Columns()[0].name == "a");
-	REQUIRE(proj->Columns()[0].type == LogicalType::INTEGER);
+	REQUIRE(proj->Columns()[0].Name() == "a");
+	REQUIRE(proj->Columns()[0].Type() == LogicalType::INTEGER);
 
 	// we can also alias like this
 	REQUIRE_NOTHROW(proj = filter->Project("i + 1", "a"));
 	REQUIRE_NOTHROW(result = proj->Execute());
 	REQUIRE(CHECK_COLUMN(result, 0, {2, 4}));
 	// we can check the column names
-	REQUIRE(proj->Columns()[0].name == "a");
-	REQUIRE(proj->Columns()[0].type == LogicalType::INTEGER);
+	REQUIRE(proj->Columns()[0].Name() == "a");
+	REQUIRE(proj->Columns()[0].Type() == LogicalType::INTEGER);
 
 	// now we can use that column to perform additional projections
 	REQUIRE_NOTHROW(result = proj->Project("a + 1")->Execute());
@@ -348,6 +348,27 @@ TEST_CASE("Test combinations of joins", "[relation_api]") {
 	REQUIRE(CHECK_COLUMN(result, 1, {10, 5, 4}));
 
 	REQUIRE_NO_FAIL(con.Query("SELECT * FROM sqlite_master"));
+}
+
+TEST_CASE("Test crossproduct relation", "[relation_api]") {
+	DuckDB db(nullptr);
+	Connection con(db);
+	con.EnableQueryVerification();
+	unique_ptr<QueryResult> result;
+	shared_ptr<Relation> values, vcross;
+
+	REQUIRE_NOTHROW(values = con.Values({{1, 10}, {2, 5}, {3, 4}}, {"i", "j"}));
+
+	auto v1 = values->Alias("v1");
+	auto v2 = values->Alias("v2");
+
+	// run cross product
+	vcross = v1->CrossProduct(v2);
+	REQUIRE_NOTHROW(result = vcross->Order("v1.i")->Execute());
+	REQUIRE(CHECK_COLUMN(result, 0, {1, 1, 1, 2, 2, 2, 3, 3, 3}));
+	REQUIRE(CHECK_COLUMN(result, 1, {10, 10, 10, 5, 5, 5, 4, 4, 4}));
+	REQUIRE(CHECK_COLUMN(result, 2, {1, 2, 3, 1, 2, 3, 1, 2, 3}));
+	REQUIRE(CHECK_COLUMN(result, 3, {10, 5, 4, 10, 5, 4, 10, 5, 4}));
 }
 
 TEST_CASE("Test view creation of relations", "[relation_api]") {
@@ -839,4 +860,22 @@ TEST_CASE("Test query relation", "[relation_api]") {
 	REQUIRE_THROWS(con.RelationFromQuery("SELECT 42; SELECT 84"));
 	// not a select statement
 	REQUIRE_THROWS(con.RelationFromQuery("DELETE FROM tbl"));
+}
+
+TEST_CASE("Test TopK relation", "[relation_api]") {
+	DuckDB db(nullptr);
+	Connection con(db);
+	con.EnableQueryVerification();
+	unique_ptr<QueryResult> result;
+	shared_ptr<Relation> tbl;
+
+	REQUIRE_NO_FAIL(con.Query("CREATE TABLE test (i integer,j VARCHAR, k varchar )"));
+	REQUIRE_NO_FAIL(con.Query("insert into test values (10,'a','a'), (20,'a','b')"));
+
+	REQUIRE_NOTHROW(tbl = con.Table("test"));
+	REQUIRE_NOTHROW(tbl = tbl->Filter("k < 'f' and k is not null")
+	                          ->Project("#3,#2,#1")
+	                          ->Project("#2,#3")
+	                          ->Order("(#2-10)::UTINYINT ASC")
+	                          ->Limit(1));
 }

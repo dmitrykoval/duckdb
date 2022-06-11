@@ -2,6 +2,7 @@
 #include "duckdb/common/types/vector.hpp"
 #include "duckdb/transaction/transaction.hpp"
 #include "duckdb/common/exception.hpp"
+#include "duckdb/common/field_writer.hpp"
 #include "duckdb/storage/table/column_data.hpp"
 #include "duckdb/storage/table/standard_column_data.hpp"
 #include "duckdb/storage/table/update_segment.hpp"
@@ -11,6 +12,7 @@
 #include "duckdb/storage/checkpoint/table_data_writer.hpp"
 #include "duckdb/storage/meta_block_reader.hpp"
 #include "duckdb/transaction/transaction_manager.hpp"
+#include "duckdb/main/database.hpp"
 
 namespace duckdb {
 
@@ -158,9 +160,10 @@ unique_ptr<RowGroup> RowGroup::AddColumn(ClientContext &context, ColumnDefinitio
 	Verify();
 
 	// construct a new column data for the new column
-	auto added_column = ColumnData::CreateColumn(GetTableInfo(), columns.size(), start, new_column.type);
+	auto added_column = ColumnData::CreateColumn(GetTableInfo(), columns.size(), start, new_column.Type());
+	auto added_col_stats = make_shared<SegmentStatistics>(
+	    new_column.Type(), BaseStatistics::CreateEmpty(new_column.Type(), StatisticsType::LOCAL_STATS));
 
-	auto added_col_stats = make_shared<SegmentStatistics>(new_column.type);
 	idx_t rows_to_write = this->count;
 	if (rows_to_write > 0) {
 		DataChunk dummy_chunk;
@@ -729,9 +732,11 @@ shared_ptr<VersionNode> RowGroup::DeserializeDeletes(Deserializer &source) {
 	return version_info;
 }
 
-void RowGroup::Serialize(RowGroupPointer &pointer, Serializer &serializer) {
-	serializer.Write<uint64_t>(pointer.row_start);
-	serializer.Write<uint64_t>(pointer.tuple_count);
+void RowGroup::Serialize(RowGroupPointer &pointer, Serializer &main_serializer) {
+	FieldWriter writer(main_serializer);
+	writer.WriteField<uint64_t>(pointer.row_start);
+	writer.WriteField<uint64_t>(pointer.tuple_count);
+	auto &serializer = writer.GetSerializer();
 	for (auto &stats : pointer.statistics) {
 		stats->Serialize(serializer);
 	}
@@ -740,27 +745,41 @@ void RowGroup::Serialize(RowGroupPointer &pointer, Serializer &serializer) {
 		serializer.Write<uint64_t>(data_pointer.offset);
 	}
 	CheckpointDeletes(pointer.versions.get(), serializer);
+	writer.Finalize();
 }
 
-RowGroupPointer RowGroup::Deserialize(Deserializer &source, const vector<ColumnDefinition> &columns) {
+RowGroupPointer RowGroup::Deserialize(Deserializer &main_source, const vector<ColumnDefinition> &columns) {
 	RowGroupPointer result;
-	result.row_start = source.Read<uint64_t>();
-	result.tuple_count = source.Read<uint64_t>();
+
+	FieldReader reader(main_source);
+	result.row_start = reader.ReadRequired<uint64_t>();
+	result.tuple_count = reader.ReadRequired<uint64_t>();
 
 	result.data_pointers.reserve(columns.size());
 	result.statistics.reserve(columns.size());
 
+	auto &source = reader.GetSource();
 	for (idx_t i = 0; i < columns.size(); i++) {
-		auto stats = BaseStatistics::Deserialize(source, columns[i].type);
+		auto &col = columns[i];
+		if (col.Generated()) {
+			continue;
+		}
+		auto stats = BaseStatistics::Deserialize(source, columns[i].Type());
 		result.statistics.push_back(move(stats));
 	}
 	for (idx_t i = 0; i < columns.size(); i++) {
+		auto &col = columns[i];
+		if (col.Generated()) {
+			continue;
+		}
 		BlockPointer pointer;
 		pointer.block_id = source.Read<block_id_t>();
 		pointer.offset = source.Read<uint64_t>();
 		result.data_pointers.push_back(pointer);
 	}
 	result.versions = DeserializeDeletes(source);
+
+	reader.Finalize();
 	return result;
 }
 

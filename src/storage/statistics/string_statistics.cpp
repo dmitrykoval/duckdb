@@ -1,12 +1,14 @@
 #include "duckdb/storage/statistics/string_statistics.hpp"
-#include "duckdb/common/serializer.hpp"
+#include "duckdb/common/field_writer.hpp"
 #include "utf8proc_wrapper.hpp"
 #include "duckdb/common/string_util.hpp"
 #include "duckdb/common/types/vector.hpp"
 
 namespace duckdb {
 
-StringStatistics::StringStatistics(LogicalType type_p) : BaseStatistics(move(type_p)) {
+StringStatistics::StringStatistics(LogicalType type_p, StatisticsType stats_type)
+    : BaseStatistics(move(type_p), stats_type) {
+	InitializeBase();
 	for (idx_t i = 0; i < MAX_STRING_MINMAX_SIZE; i++) {
 		min[i] = 0xFF;
 		max[i] = 0;
@@ -14,37 +16,34 @@ StringStatistics::StringStatistics(LogicalType type_p) : BaseStatistics(move(typ
 	max_string_length = 0;
 	has_unicode = false;
 	has_overflow_strings = false;
-	validity_stats = make_unique<ValidityStatistics>(false);
 }
 
-unique_ptr<BaseStatistics> StringStatistics::Copy() {
-	auto stats = make_unique<StringStatistics>(type);
-	memcpy(stats->min, min, MAX_STRING_MINMAX_SIZE);
-	memcpy(stats->max, max, MAX_STRING_MINMAX_SIZE);
-	stats->has_unicode = has_unicode;
-	stats->max_string_length = max_string_length;
-	if (validity_stats) {
-		stats->validity_stats = validity_stats->Copy();
-	}
-	return move(stats);
+unique_ptr<BaseStatistics> StringStatistics::Copy() const {
+	auto result = make_unique<StringStatistics>(type, stats_type);
+	result->CopyBase(*this);
+
+	memcpy(result->min, min, MAX_STRING_MINMAX_SIZE);
+	memcpy(result->max, max, MAX_STRING_MINMAX_SIZE);
+	result->has_unicode = has_unicode;
+	result->max_string_length = max_string_length;
+	return move(result);
 }
 
-void StringStatistics::Serialize(Serializer &serializer) {
-	BaseStatistics::Serialize(serializer);
-	serializer.WriteData(min, MAX_STRING_MINMAX_SIZE);
-	serializer.WriteData(max, MAX_STRING_MINMAX_SIZE);
-	serializer.Write<bool>(has_unicode);
-	serializer.Write<uint32_t>(max_string_length);
-	serializer.Write<bool>(has_overflow_strings);
+void StringStatistics::Serialize(FieldWriter &writer) const {
+	writer.WriteBlob(min, MAX_STRING_MINMAX_SIZE);
+	writer.WriteBlob(max, MAX_STRING_MINMAX_SIZE);
+	writer.WriteField<bool>(has_unicode);
+	writer.WriteField<uint32_t>(max_string_length);
+	writer.WriteField<bool>(has_overflow_strings);
 }
 
-unique_ptr<BaseStatistics> StringStatistics::Deserialize(Deserializer &source, LogicalType type) {
-	auto stats = make_unique<StringStatistics>(move(type));
-	source.ReadData(stats->min, MAX_STRING_MINMAX_SIZE);
-	source.ReadData(stats->max, MAX_STRING_MINMAX_SIZE);
-	stats->has_unicode = source.Read<bool>();
-	stats->max_string_length = source.Read<uint32_t>();
-	stats->has_overflow_strings = source.Read<bool>();
+unique_ptr<BaseStatistics> StringStatistics::Deserialize(FieldReader &reader, LogicalType type) {
+	auto stats = make_unique<StringStatistics>(move(type), StatisticsType::LOCAL_STATS);
+	reader.ReadBlob(stats->min, MAX_STRING_MINMAX_SIZE);
+	reader.ReadBlob(stats->max, MAX_STRING_MINMAX_SIZE);
+	stats->has_unicode = reader.ReadRequired<bool>();
+	stats->max_string_length = reader.ReadRequired<uint32_t>();
+	stats->has_overflow_strings = reader.ReadRequired<bool>();
 	return move(stats);
 }
 
@@ -112,7 +111,7 @@ void StringStatistics::Merge(const BaseStatistics &other_p) {
 	has_overflow_strings = has_overflow_strings || other.has_overflow_strings;
 }
 
-FilterPropagateResult StringStatistics::CheckZonemap(ExpressionType comparison_type, const string &constant) {
+FilterPropagateResult StringStatistics::CheckZonemap(ExpressionType comparison_type, const string &constant) const {
 	auto data = (const_data_ptr_t)constant.c_str();
 	auto size = constant.size();
 
@@ -150,7 +149,7 @@ FilterPropagateResult StringStatistics::CheckZonemap(ExpressionType comparison_t
 	}
 }
 
-static idx_t GetValidMinMaxSubstring(data_ptr_t data) {
+static idx_t GetValidMinMaxSubstring(const_data_ptr_t data) {
 	for (idx_t i = 0; i < StringStatistics::MAX_STRING_MINMAX_SIZE; i++) {
 		if (data[i] == '\0') {
 			return i;
@@ -162,16 +161,15 @@ static idx_t GetValidMinMaxSubstring(data_ptr_t data) {
 	return StringStatistics::MAX_STRING_MINMAX_SIZE;
 }
 
-string StringStatistics::ToString() {
+string StringStatistics::ToString() const {
 	idx_t min_len = GetValidMinMaxSubstring(min);
 	idx_t max_len = GetValidMinMaxSubstring(max);
 	return StringUtil::Format("[Min: %s, Max: %s, Has Unicode: %s, Max String Length: %lld]%s",
 	                          string((const char *)min, min_len), string((const char *)max, max_len),
-	                          has_unicode ? "true" : "false", max_string_length,
-	                          validity_stats ? validity_stats->ToString() : "");
+	                          has_unicode ? "true" : "false", max_string_length, BaseStatistics::ToString());
 }
 
-void StringStatistics::Verify(Vector &vector, const SelectionVector &sel, idx_t count) {
+void StringStatistics::Verify(Vector &vector, const SelectionVector &sel, idx_t count) const {
 	BaseStatistics::Verify(vector, sel, count);
 
 	string_t min_string((const char *)min, MAX_STRING_MINMAX_SIZE);

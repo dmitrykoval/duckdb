@@ -9,7 +9,6 @@ add_subdirectory(sequence)
 add_subdirectory(string)
 add_subdirectory(struct)
 add_subdirectory(system)
-add_subdirectory(uuid)
 add_subdirectory(enum)
 add_subdirectory(geospatial)
 add_library_unity(

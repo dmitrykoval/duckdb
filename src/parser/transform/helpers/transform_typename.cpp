@@ -8,14 +8,14 @@
 namespace duckdb {
 
 LogicalType Transformer::TransformTypeName(duckdb_libpgquery::PGTypeName *type_name) {
-	if (type_name->type != duckdb_libpgquery::T_PGTypeName) {
+	if (!type_name || type_name->type != duckdb_libpgquery::T_PGTypeName) {
 		throw ParserException("Expected a type");
 	}
 	auto stack_checker = StackCheck();
 
 	auto name = (reinterpret_cast<duckdb_libpgquery::PGValue *>(type_name->names->tail->data.ptr_value)->val.str);
 	// transform it to the SQL type
-	LogicalTypeId base_type = TransformStringToLogicalType(name);
+	LogicalTypeId base_type = TransformStringToLogicalTypeId(name);
 
 	LogicalType result_type;
 	if (base_type == LogicalTypeId::STRUCT) {

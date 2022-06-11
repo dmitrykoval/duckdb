@@ -6,10 +6,23 @@ dbFetch__duckdb_result <- function(res, n = -1, ...) {
   if (!res@env$open) {
     stop("result set was closed")
   }
+
+  if (res@arrow) {
+    if (n != -1) {
+      stop("Cannot dbFetch() an Arrow result unless n = -1")
+    }
+    return(as.data.frame(duckdb::duckdb_fetch_arrow(res)))
+  }
+
   if (is.null(res@env$resultset)) {
     stop("Need to call `dbBind()` before `dbFetch()`")
   }
-
+  if (res@stmt_lst$type == "EXPLAIN") {
+    df <- res@env$resultset
+    attr(df, "query") <- res@stmt_lst$str
+    class(df) <- c("duckdb_explain", class(df))
+    return(df)
+  }
   if (length(n) != 1) {
     stop("need exactly one value in n")
   }
@@ -25,10 +38,6 @@ dbFetch__duckdb_result <- function(res, n = -1, ...) {
   if (res@stmt_lst$type != "SELECT") {
     warning("Should not call dbFetch() on results that do not come from SELECT")
     return(data.frame())
-  }
-
-  if (res@arrow) {
-    stop("Cannot dbFetch() an Arrow result")
   }
 
   timezone_out <- res@connection@timezone_out

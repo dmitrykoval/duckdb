@@ -1,9 +1,35 @@
 #include "duckdb/parser/tableref/joinref.hpp"
 
 #include "duckdb/common/limits.hpp"
-#include "duckdb/common/serializer.hpp"
+#include "duckdb/common/field_writer.hpp"
 
 namespace duckdb {
+
+string JoinRef::ToString() const {
+	string result;
+	result = left->ToString() + " ";
+	if (is_natural) {
+		result += "NATURAL ";
+	}
+	result += JoinTypeToString(type) + " JOIN ";
+	result += right->ToString();
+	if (condition) {
+		D_ASSERT(using_columns.empty());
+		result += " ON (";
+		result += condition->ToString();
+		result += ")";
+	} else if (!using_columns.empty()) {
+		result += " USING (";
+		for (idx_t i = 0; i < using_columns.size(); i++) {
+			if (i > 0) {
+				result += ", ";
+			}
+			result += using_columns[i];
+		}
+		result += ")";
+	}
+	return result;
+}
 
 bool JoinRef::Equals(const TableRef *other_p) const {
 	if (!TableRef::Equals(other_p)) {
@@ -36,33 +62,23 @@ unique_ptr<TableRef> JoinRef::Copy() {
 	return move(copy);
 }
 
-void JoinRef::Serialize(Serializer &serializer) {
-	TableRef::Serialize(serializer);
-
-	left->Serialize(serializer);
-	right->Serialize(serializer);
-	serializer.WriteOptional(condition);
-	serializer.Write<JoinType>(type);
-	serializer.Write<bool>(is_natural);
-	D_ASSERT(using_columns.size() <= NumericLimits<uint32_t>::Maximum());
-	serializer.Write<uint32_t>((uint32_t)using_columns.size());
-	for (auto &using_column : using_columns) {
-		serializer.WriteString(using_column);
-	}
+void JoinRef::Serialize(FieldWriter &writer) const {
+	writer.WriteSerializable(*left);
+	writer.WriteSerializable(*right);
+	writer.WriteOptional(condition);
+	writer.WriteField<JoinType>(type);
+	writer.WriteField<bool>(is_natural);
+	writer.WriteList<string>(using_columns);
 }
 
-unique_ptr<TableRef> JoinRef::Deserialize(Deserializer &source) {
+unique_ptr<TableRef> JoinRef::Deserialize(FieldReader &reader) {
 	auto result = make_unique<JoinRef>();
-
-	result->left = TableRef::Deserialize(source);
-	result->right = TableRef::Deserialize(source);
-	result->condition = source.ReadOptional<ParsedExpression>();
-	result->type = source.Read<JoinType>();
-	result->is_natural = source.Read<bool>();
-	auto count = source.Read<uint32_t>();
-	for (idx_t i = 0; i < count; i++) {
-		result->using_columns.push_back(source.Read<string>());
-	}
+	result->left = reader.ReadRequiredSerializable<TableRef>();
+	result->right = reader.ReadRequiredSerializable<TableRef>();
+	result->condition = reader.ReadOptional<ParsedExpression>(nullptr);
+	result->type = reader.ReadRequired<JoinType>();
+	result->is_natural = reader.ReadRequired<bool>();
+	result->using_columns = reader.ReadRequiredList<string>();
 	return move(result);
 }
 

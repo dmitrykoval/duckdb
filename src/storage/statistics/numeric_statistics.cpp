@@ -1,6 +1,8 @@
 #include "duckdb/storage/statistics/numeric_statistics.hpp"
-#include "duckdb/common/types/vector.hpp"
+
+#include "duckdb/common/field_writer.hpp"
 #include "duckdb/common/operator/comparison_operators.hpp"
+#include "duckdb/common/types/vector.hpp"
 
 namespace duckdb {
 
@@ -12,14 +14,16 @@ template <>
 void NumericStatistics::Update<list_entry_t>(SegmentStatistics &stats, list_entry_t new_value) {
 }
 
-NumericStatistics::NumericStatistics(LogicalType type_p) : BaseStatistics(move(type_p)) {
+NumericStatistics::NumericStatistics(LogicalType type_p, StatisticsType stats_type)
+    : BaseStatistics(move(type_p), stats_type) {
+	InitializeBase();
 	min = Value::MaximumValue(type);
 	max = Value::MinimumValue(type);
-	validity_stats = make_unique<ValidityStatistics>(false);
 }
 
-NumericStatistics::NumericStatistics(LogicalType type_p, Value min_p, Value max_p)
-    : BaseStatistics(move(type_p)), min(move(min_p)), max(move(max_p)) {
+NumericStatistics::NumericStatistics(LogicalType type_p, Value min_p, Value max_p, StatisticsType stats_type)
+    : BaseStatistics(move(type_p), stats_type), min(move(min_p)), max(move(max_p)) {
+	InitializeBase();
 }
 
 void NumericStatistics::Merge(const BaseStatistics &other_p) {
@@ -37,7 +41,7 @@ void NumericStatistics::Merge(const BaseStatistics &other_p) {
 	}
 }
 
-FilterPropagateResult NumericStatistics::CheckZonemap(ExpressionType comparison_type, const Value &constant) {
+FilterPropagateResult NumericStatistics::CheckZonemap(ExpressionType comparison_type, const Value &constant) const {
 	if (constant.IsNull()) {
 		return FilterPropagateResult::FILTER_ALWAYS_FALSE;
 	}
@@ -110,37 +114,33 @@ FilterPropagateResult NumericStatistics::CheckZonemap(ExpressionType comparison_
 	}
 }
 
-unique_ptr<BaseStatistics> NumericStatistics::Copy() {
-	auto stats = make_unique<NumericStatistics>(type, min, max);
-	if (validity_stats) {
-		stats->validity_stats = validity_stats->Copy();
-	}
-	return move(stats);
+unique_ptr<BaseStatistics> NumericStatistics::Copy() const {
+	auto result = make_unique<NumericStatistics>(type, min, max, stats_type);
+	result->CopyBase(*this);
+	return move(result);
 }
 
-bool NumericStatistics::IsConstant() {
+bool NumericStatistics::IsConstant() const {
 	return max <= min;
 }
 
-void NumericStatistics::Serialize(Serializer &serializer) {
-	BaseStatistics::Serialize(serializer);
-	min.Serialize(serializer);
-	max.Serialize(serializer);
+void NumericStatistics::Serialize(FieldWriter &writer) const {
+	writer.WriteSerializable(min);
+	writer.WriteSerializable(max);
 }
 
-unique_ptr<BaseStatistics> NumericStatistics::Deserialize(Deserializer &source, LogicalType type) {
-	auto min = Value::Deserialize(source);
-	auto max = Value::Deserialize(source);
-	return make_unique_base<BaseStatistics, NumericStatistics>(move(type), min, max);
+unique_ptr<BaseStatistics> NumericStatistics::Deserialize(FieldReader &reader, LogicalType type) {
+	auto min = reader.ReadRequiredSerializable<Value, Value>();
+	auto max = reader.ReadRequiredSerializable<Value, Value>();
+	return make_unique_base<BaseStatistics, NumericStatistics>(move(type), min, max, StatisticsType::LOCAL_STATS);
 }
 
-string NumericStatistics::ToString() {
-	return StringUtil::Format("[Min: %s, Max: %s]%s", min.ToString(), max.ToString(),
-	                          validity_stats ? validity_stats->ToString() : "");
+string NumericStatistics::ToString() const {
+	return StringUtil::Format("[Min: %s, Max: %s]%s", min.ToString(), max.ToString(), BaseStatistics::ToString());
 }
 
 template <class T>
-void NumericStatistics::TemplatedVerify(Vector &vector, const SelectionVector &sel, idx_t count) {
+void NumericStatistics::TemplatedVerify(Vector &vector, const SelectionVector &sel, idx_t count) const {
 	VectorData vdata;
 	vector.Orrify(count, vdata);
 
@@ -162,7 +162,7 @@ void NumericStatistics::TemplatedVerify(Vector &vector, const SelectionVector &s
 	}
 }
 
-void NumericStatistics::Verify(Vector &vector, const SelectionVector &sel, idx_t count) {
+void NumericStatistics::Verify(Vector &vector, const SelectionVector &sel, idx_t count) const {
 	BaseStatistics::Verify(vector, sel, count);
 
 	switch (type.InternalType()) {

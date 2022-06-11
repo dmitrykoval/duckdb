@@ -4,8 +4,7 @@
 
 namespace duckdb {
 
-PreparedStatementData::PreparedStatementData(StatementType type)
-    : statement_type(type), read_only(true), requires_valid_transaction(true), allow_stream_result(false) {
+PreparedStatementData::PreparedStatementData(StatementType type) : statement_type(type) {
 }
 
 PreparedStatementData::~PreparedStatementData() {
@@ -13,23 +12,25 @@ PreparedStatementData::~PreparedStatementData() {
 
 void PreparedStatementData::Bind(vector<Value> values) {
 	// set parameters
-	if (values.size() != value_map.size()) {
+	const auto required = unbound_statement ? unbound_statement->n_param : 0;
+	if (values.size() != required) {
 		throw BinderException("Parameter/argument count mismatch for prepared statement. Expected %llu, got %llu",
-		                      value_map.size(), values.size());
+		                      required, values.size());
 	}
-	// bind the values
-	for (idx_t i = 0; i < values.size(); i++) {
-		auto it = value_map.find(i + 1);
-		if (it == value_map.end()) {
+
+	// bind the required values
+	for (auto &it : value_map) {
+		const idx_t i = it.first - 1;
+		if (i >= values.size()) {
 			throw BinderException("Could not find parameter with index %llu", i + 1);
 		}
-		D_ASSERT(!it->second.empty());
-		if (!values[i].TryCastAs(it->second[0]->type())) {
+		D_ASSERT(!it.second.empty());
+		if (!values[i].TryCastAs(it.second[0]->type())) {
 			throw BinderException(
 			    "Type mismatch for binding parameter with index %llu, expected type %s but got type %s", i + 1,
-			    it->second[0]->type().ToString().c_str(), values[i].type().ToString().c_str());
+			    it.second[0]->type().ToString().c_str(), values[i].type().ToString().c_str());
 		}
-		for (auto &target : it->second) {
+		for (auto &target : it.second) {
 			*target = values[i];
 		}
 	}

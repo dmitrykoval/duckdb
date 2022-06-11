@@ -17,7 +17,7 @@ class Vector;
 
 class ValidityStatistics : public BaseStatistics {
 public:
-	ValidityStatistics(bool has_null = false, bool has_no_null = true);
+	explicit ValidityStatistics(bool has_null = false, bool has_no_null = true);
 
 	//! Whether or not the segment can contain NULL values
 	bool has_null;
@@ -27,17 +27,19 @@ public:
 public:
 	void Merge(const BaseStatistics &other) override;
 
-	bool IsConstant() override;
+	bool IsConstant() const override;
 
-	unique_ptr<BaseStatistics> Copy() override;
-	void Serialize(Serializer &serializer) override;
-	static unique_ptr<BaseStatistics> Deserialize(Deserializer &source);
-	void Verify(Vector &vector, const SelectionVector &sel, idx_t count) override;
+	unique_ptr<BaseStatistics> Copy() const override;
+
+	void Serialize(FieldWriter &writer) const override;
+	static unique_ptr<ValidityStatistics> Deserialize(FieldReader &reader);
+
+	void Verify(Vector &vector, const SelectionVector &sel, idx_t count) const override;
 
 	static unique_ptr<BaseStatistics> Combine(const unique_ptr<BaseStatistics> &lstats,
 	                                          const unique_ptr<BaseStatistics> &rstats);
 
-	string ToString() override;
+	string ToString() const override;
 };
 
 } // namespace duckdb

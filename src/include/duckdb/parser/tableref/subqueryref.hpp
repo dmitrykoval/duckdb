@@ -23,13 +23,14 @@ public:
 	vector<string> column_name_alias;
 
 public:
+	string ToString() const override;
 	bool Equals(const TableRef *other_p) const override;
 
 	unique_ptr<TableRef> Copy() override;
 
 	//! Serializes a blob into a SubqueryRef
-	void Serialize(Serializer &serializer) override;
+	void Serialize(FieldWriter &serializer) const override;
 	//! Deserializes a blob back into a SubqueryRef
-	static unique_ptr<TableRef> Deserialize(Deserializer &source);
+	static unique_ptr<TableRef> Deserialize(FieldReader &source);
 };
 } // namespace duckdb

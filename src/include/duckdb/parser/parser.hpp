@@ -23,6 +23,7 @@ namespace duckdb {
 
 struct ParserOptions {
 	bool preserve_identifier_case = true;
+	idx_t max_expression_depth = 1000;
 };
 
 //! The parser is responsible for parsing the query and converting it into a set
@@ -51,8 +52,8 @@ public:
 	static vector<ParserKeyword> KeywordList();
 
 	//! Parses a list of expressions (i.e. the list found in a SELECT clause)
-	static vector<unique_ptr<ParsedExpression>> ParseExpressionList(const string &select_list,
-	                                                                ParserOptions options = ParserOptions());
+	DUCKDB_API static vector<unique_ptr<ParsedExpression>> ParseExpressionList(const string &select_list,
+	                                                                           ParserOptions options = ParserOptions());
 	//! Parses a list as found in an ORDER BY expression (i.e. including optional ASCENDING/DESCENDING modifiers)
 	static vector<OrderByNode> ParseOrderList(const string &select_list, ParserOptions options = ParserOptions());
 	//! Parses an update list (i.e. the list found in the SET clause of an UPDATE statement)

@@ -1,18 +1,19 @@
 #include "duckdb/storage/statistics/struct_statistics.hpp"
+
+#include "duckdb/common/field_writer.hpp"
 #include "duckdb/common/types/vector.hpp"
-#include "duckdb/common/serializer.hpp"
 
 namespace duckdb {
 
-StructStatistics::StructStatistics(LogicalType type_p) : BaseStatistics(move(type_p)) {
+StructStatistics::StructStatistics(LogicalType type_p) : BaseStatistics(move(type_p), StatisticsType::LOCAL_STATS) {
 	D_ASSERT(type.InternalType() == PhysicalType::STRUCT);
+	InitializeBase();
 
 	auto &child_types = StructType::GetChildTypes(type);
 	child_stats.resize(child_types.size());
 	for (idx_t i = 0; i < child_types.size(); i++) {
-		child_stats[i] = BaseStatistics::CreateEmpty(child_types[i].second);
+		child_stats[i] = BaseStatistics::CreateEmpty(child_types[i].second, StatisticsType::LOCAL_STATS);
 	}
-	validity_stats = make_unique<ValidityStatistics>(false);
 }
 
 void StructStatistics::Merge(const BaseStatistics &other_p) {
@@ -30,24 +31,24 @@ void StructStatistics::Merge(const BaseStatistics &other_p) {
 }
 
 // LCOV_EXCL_START
-FilterPropagateResult StructStatistics::CheckZonemap(ExpressionType comparison_type, const Value &constant) {
+FilterPropagateResult StructStatistics::CheckZonemap(ExpressionType comparison_type, const Value &constant) const {
 	throw InternalException("Struct zonemaps are not supported yet");
 }
 // LCOV_EXCL_STOP
 
-unique_ptr<BaseStatistics> StructStatistics::Copy() {
-	auto copy = make_unique<StructStatistics>(type);
-	if (validity_stats) {
-		copy->validity_stats = validity_stats->Copy();
-	}
+unique_ptr<BaseStatistics> StructStatistics::Copy() const {
+	auto result = make_unique<StructStatistics>(type);
+	result->CopyBase(*this);
+
 	for (idx_t i = 0; i < child_stats.size(); i++) {
-		copy->child_stats[i] = child_stats[i] ? child_stats[i]->Copy() : nullptr;
+		result->child_stats[i] = child_stats[i] ? child_stats[i]->Copy() : nullptr;
 	}
-	return move(copy);
+	return move(result);
 }
 
-void StructStatistics::Serialize(Serializer &serializer) {
-	BaseStatistics::Serialize(serializer);
+void StructStatistics::Serialize(FieldWriter &writer) const {
+	writer.WriteField<uint32_t>(child_stats.size());
+	auto &serializer = writer.GetSerializer();
 	for (idx_t i = 0; i < child_stats.size(); i++) {
 		serializer.Write<bool>(child_stats[i] ? true : false);
 		if (child_stats[i]) {
@@ -56,10 +57,16 @@ void StructStatistics::Serialize(Serializer &serializer) {
 	}
 }
 
-unique_ptr<BaseStatistics> StructStatistics::Deserialize(Deserializer &source, LogicalType type) {
+unique_ptr<BaseStatistics> StructStatistics::Deserialize(FieldReader &reader, LogicalType type) {
 	D_ASSERT(type.InternalType() == PhysicalType::STRUCT);
 	auto result = make_unique<StructStatistics>(move(type));
 	auto &child_types = StructType::GetChildTypes(result->type);
+
+	auto child_type_count = reader.ReadRequired<uint32_t>();
+	if (child_types.size() != child_type_count) {
+		throw InternalException("Struct stats deserialization failure: child count does not match type count!");
+	}
+	auto &source = reader.GetSource();
 	for (idx_t i = 0; i < child_types.size(); i++) {
 		auto has_child = source.Read<bool>();
 		if (has_child) {
@@ -71,7 +78,7 @@ unique_ptr<BaseStatistics> StructStatistics::Deserialize(Deserializer &source, L
 	return move(result);
 }
 
-string StructStatistics::ToString() {
+string StructStatistics::ToString() const {
 	string result;
 	result += " {";
 	auto &child_types = StructType::GetChildTypes(type);
@@ -82,11 +89,11 @@ string StructStatistics::ToString() {
 		result += child_types[i].first + ": " + (child_stats[i] ? child_stats[i]->ToString() : "No Stats");
 	}
 	result += "}";
-	result += validity_stats ? validity_stats->ToString() : "";
+	result += BaseStatistics::ToString();
 	return result;
 }
 
-void StructStatistics::Verify(Vector &vector, const SelectionVector &sel, idx_t count) {
+void StructStatistics::Verify(Vector &vector, const SelectionVector &sel, idx_t count) const {
 	BaseStatistics::Verify(vector, sel, count);
 
 	auto &child_entries = StructVector::GetEntries(vector);

@@ -3,7 +3,6 @@
 #include "duckdb/catalog/catalog_entry/aggregate_function_catalog_entry.hpp"
 #include "duckdb/common/algorithm.hpp"
 #include "duckdb/common/exception.hpp"
-#include "duckdb/common/operator/comparison_operators.hpp"
 #include "duckdb/common/row_operations/row_operations.hpp"
 #include "duckdb/common/types/null_value.hpp"
 #include "duckdb/common/types/row_data_collection.hpp"
@@ -14,7 +13,6 @@
 #include "duckdb/storage/buffer_manager.hpp"
 
 #include <cmath>
-#include <map>
 
 namespace duckdb {
 
@@ -82,7 +80,7 @@ GroupedAggregateHashTable::GroupedAggregateHashTable(BufferManager &buffer_manag
 			vector<LogicalType> distinct_group_types(layout.GetTypes());
 			(void)distinct_group_types.pop_back();
 			for (idx_t child_idx = 0; child_idx < aggr.child_count; child_idx++) {
-				distinct_group_types.push_back(payload_types[payload_idx]);
+				distinct_group_types.push_back(payload_types[payload_idx + child_idx]);
 			}
 			distinct_hashes[i] = make_unique<GroupedAggregateHashTable>(buffer_manager, distinct_group_types);
 		}
@@ -288,7 +286,7 @@ idx_t GroupedAggregateHashTable::AddChunk(DataChunk &groups, Vector &group_hashe
 			// construct chunk for secondary hash table probing
 			vector<LogicalType> probe_types(groups.GetTypes());
 			for (idx_t i = 0; i < aggr.child_count; i++) {
-				probe_types.push_back(payload_types[payload_idx]);
+				probe_types.push_back(payload_types[payload_idx + i]);
 			}
 			DataChunk probe_chunk;
 			probe_chunk.Initialize(probe_types);
@@ -306,28 +304,23 @@ idx_t GroupedAggregateHashTable::AddChunk(DataChunk &groups, Vector &group_hashe
 			// value have not been seen yet
 			idx_t new_group_count =
 			    distinct_hashes[aggr_idx]->FindOrCreateGroups(probe_chunk, dummy_addresses, new_groups);
-
-			// now fix up the payload and addresses accordingly by creating
-			// a selection vector
 			if (new_group_count > 0) {
+				// now fix up the payload and addresses accordingly by creating
+				// a selection vector
+				DataChunk distinct_payload;
+				distinct_payload.Initialize(payload.GetTypes());
+				distinct_payload.Slice(payload, new_groups, new_group_count);
+				distinct_payload.Verify();
+
+				Vector distinct_addresses(addresses, new_groups, new_group_count);
+				distinct_addresses.Verify(new_group_count);
+
 				if (aggr.filter) {
-					Vector distinct_addresses(addresses, new_groups, new_group_count);
-					DataChunk distinct_payload;
-					auto pay_types = payload.GetTypes();
-					distinct_payload.Initialize(pay_types);
-					distinct_payload.Slice(payload, new_groups, new_group_count);
-					distinct_addresses.Verify(new_group_count);
 					distinct_addresses.Normalify(new_group_count);
 					RowOperations::UpdateFilteredStates(aggr, distinct_addresses, distinct_payload, payload_idx);
 				} else {
-					Vector distinct_addresses(addresses, new_groups, new_group_count);
-					for (idx_t i = 0; i < aggr.child_count; i++) {
-						payload.data[payload_idx + i].Slice(new_groups, new_group_count);
-						payload.data[payload_idx + i].Verify(new_group_count);
-					}
-					distinct_addresses.Verify(new_group_count);
-
-					RowOperations::UpdateStates(aggr, distinct_addresses, payload, payload_idx, new_group_count);
+					RowOperations::UpdateStates(aggr, distinct_addresses, distinct_payload, payload_idx,
+					                            new_group_count);
 				}
 			}
 		} else if (aggr.filter) {

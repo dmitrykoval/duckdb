@@ -23,8 +23,8 @@ namespace duckdb {
 
 class NumericStatistics : public BaseStatistics {
 public:
-	explicit NumericStatistics(LogicalType type);
-	NumericStatistics(LogicalType type, Value min, Value max);
+	explicit NumericStatistics(LogicalType type, StatisticsType stats_type);
+	NumericStatistics(LogicalType type, Value min, Value max, StatisticsType stats_type);
 
 	//! The minimum value of the segment
 	Value min;
@@ -34,20 +34,20 @@ public:
 public:
 	void Merge(const BaseStatistics &other) override;
 
-	bool IsConstant() override;
+	bool IsConstant() const override;
 
-	FilterPropagateResult CheckZonemap(ExpressionType comparison_type, const Value &constant);
+	FilterPropagateResult CheckZonemap(ExpressionType comparison_type, const Value &constant) const;
 
-	unique_ptr<BaseStatistics> Copy() override;
-	void Serialize(Serializer &serializer) override;
-	static unique_ptr<BaseStatistics> Deserialize(Deserializer &source, LogicalType type);
-	void Verify(Vector &vector, const SelectionVector &sel, idx_t count) override;
+	unique_ptr<BaseStatistics> Copy() const override;
+	void Serialize(FieldWriter &writer) const override;
+	static unique_ptr<BaseStatistics> Deserialize(FieldReader &reader, LogicalType type);
+	void Verify(Vector &vector, const SelectionVector &sel, idx_t count) const override;
 
-	string ToString() override;
+	string ToString() const override;
 
 private:
 	template <class T>
-	void TemplatedVerify(Vector &vector, const SelectionVector &sel, idx_t count);
+	void TemplatedVerify(Vector &vector, const SelectionVector &sel, idx_t count) const;
 
 public:
 	template <class T>

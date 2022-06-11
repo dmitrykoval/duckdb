@@ -46,7 +46,7 @@ struct FirstFunction : public FirstFunctionBase {
 	}
 
 	template <class STATE, class OP>
-	static void Combine(const STATE &source, STATE *target) {
+	static void Combine(const STATE &source, STATE *target, FunctionData *bind_data) {
 		if (!target->is_set) {
 			*target = source;
 		}
@@ -97,7 +97,7 @@ struct FirstFunctionString : public FirstFunctionBase {
 	}
 
 	template <class STATE, class OP>
-	static void Combine(const STATE &source, STATE *target) {
+	static void Combine(const STATE &source, STATE *target, FunctionData *bind_data) {
 		if (source.is_set && (LAST || !target->is_set)) {
 			SetValue(target, source.value, source.is_null);
 		}
@@ -108,7 +108,7 @@ struct FirstFunctionString : public FirstFunctionBase {
 		if (!state->is_set || state->is_null) {
 			mask.SetInvalid(idx);
 		} else {
-			target[idx] = StringVector::AddString(result, state->value);
+			target[idx] = StringVector::AddStringOrBlob(result, state->value);
 		}
 	}
 
@@ -167,7 +167,7 @@ struct FirstVectorFunction {
 	}
 
 	template <class STATE, class OP>
-	static void Combine(const STATE &source, STATE *target) {
+	static void Combine(const STATE &source, STATE *target, FunctionData *bind_data) {
 		if (source.value && (LAST || !target->value)) {
 			SetValue(target, *source.value, 0);
 		}
@@ -290,6 +290,7 @@ unique_ptr<FunctionData> BindDecimalFirst(ClientContext &context, AggregateFunct
                                           vector<unique_ptr<Expression>> &arguments) {
 	auto decimal_type = arguments[0]->return_type;
 	function = GetFirstFunction<LAST>(decimal_type);
+	function.name = "first";
 	function.return_type = decimal_type;
 	return nullptr;
 }

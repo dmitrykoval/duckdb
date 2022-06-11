@@ -7,6 +7,7 @@
 #include "duckdb/common/windows.hpp"
 #include "duckdb/function/scalar/string_functions.hpp"
 #include "duckdb/main/client_context.hpp"
+#include "duckdb/main/client_data.hpp"
 #include "duckdb/main/database.hpp"
 
 #include <cstdint>
@@ -40,7 +41,7 @@ FileSystem &FileSystem::GetFileSystem(ClientContext &context) {
 }
 
 FileOpener *FileSystem::GetFileOpener(ClientContext &context) {
-	return context.file_opener.get();
+	return ClientData::Get(context).file_opener.get();
 }
 
 #ifndef _WIN32
@@ -197,7 +198,7 @@ void FileSystem::RemoveDirectory(const string &directory) {
 	throw NotImplementedException("%s: RemoveDirectory is not implemented!", GetName());
 }
 
-bool FileSystem::ListFiles(const string &directory, const std::function<void(string, bool)> &callback) {
+bool FileSystem::ListFiles(const string &directory, const std::function<void(const string &, bool)> &callback) {
 	throw NotImplementedException("%s: ListFiles is not implemented!", GetName());
 }
 
@@ -209,6 +210,10 @@ bool FileSystem::FileExists(const string &filename) {
 	throw NotImplementedException("%s: FileExists is not implemented!", GetName());
 }
 
+bool FileSystem::IsPipe(const string &filename) {
+	throw NotImplementedException("%s: IsPipe is not implemented!", GetName());
+}
+
 void FileSystem::RemoveFile(const string &filename) {
 	throw NotImplementedException("%s: RemoveFile is not implemented!", GetName());
 }
@@ -217,8 +222,12 @@ void FileSystem::FileSync(FileHandle &handle) {
 	throw NotImplementedException("%s: FileSync is not implemented!", GetName());
 }
 
-vector<string> FileSystem::Glob(const string &path) {
+vector<string> FileSystem::Glob(const string &path, FileOpener *opener) {
 	throw NotImplementedException("%s: Glob is not implemented!", GetName());
+}
+
+vector<string> FileSystem::Glob(const string &path, ClientContext &context) {
+	return Glob(path, GetFileOpener(context));
 }
 
 void FileSystem::RegisterSubSystem(unique_ptr<FileSystem> sub_fs) {

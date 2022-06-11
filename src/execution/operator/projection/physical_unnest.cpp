@@ -8,7 +8,6 @@
 
 namespace duckdb {
 
-//! The operator state of the window
 class UnnestOperatorState : public OperatorState {
 public:
 	UnnestOperatorState() : parent_position(0), list_position(0), list_length(-1), first_fetch(true) {
@@ -146,11 +145,17 @@ static void UnnestVector(VectorData &vdata, Vector &source, idx_t list_size, idx
 }
 
 unique_ptr<OperatorState> PhysicalUnnest::GetOperatorState(ClientContext &context) const {
+	return PhysicalUnnest::GetState(context);
+}
+
+unique_ptr<OperatorState> PhysicalUnnest::GetState(ClientContext &context) {
 	return make_unique<UnnestOperatorState>();
 }
 
-OperatorResultType PhysicalUnnest::Execute(ExecutionContext &context, DataChunk &input, DataChunk &chunk,
-                                           OperatorState &state_p) const {
+OperatorResultType PhysicalUnnest::ExecuteInternal(ClientContext &context, DataChunk &input, DataChunk &chunk,
+                                                   OperatorState &state_p,
+                                                   const vector<unique_ptr<Expression>> &select_list,
+                                                   bool include_input) {
 	auto &state = (UnnestOperatorState &)state_p;
 	do {
 		if (state.first_fetch) {
@@ -179,9 +184,15 @@ OperatorResultType PhysicalUnnest::Execute(ExecutionContext &context, DataChunk 
 				auto &list_vector = state.list_data.data[col_idx];
 				list_vector.Orrify(state.list_data.size(), state.list_vector_data[col_idx]);
 
-				auto &child_vector = ListVector::GetEntry(list_vector);
-				auto list_size = ListVector::GetListSize(list_vector);
-				child_vector.Orrify(list_size, state.list_child_data[col_idx]);
+				if (list_vector.GetType() == LogicalType::SQLNULL) {
+					// UNNEST(NULL)
+					auto &child_vector = list_vector;
+					child_vector.Orrify(0, state.list_child_data[col_idx]);
+				} else {
+					auto list_size = ListVector::GetListSize(list_vector);
+					auto &child_vector = ListVector::GetEntry(list_vector);
+					child_vector.Orrify(list_size, state.list_child_data[col_idx]);
+				}
 			}
 			state.first_fetch = false;
 		}
@@ -223,41 +234,52 @@ OperatorResultType PhysicalUnnest::Execute(ExecutionContext &context, DataChunk 
 		// first cols are from child, last n cols from unnest
 		chunk.SetCardinality(this_chunk_len);
 
-		for (idx_t col_idx = 0; col_idx < input.ColumnCount(); col_idx++) {
-			ConstantVector::Reference(chunk.data[col_idx], input.data[col_idx], state.parent_position, input.size());
+		idx_t output_offset = 0;
+		if (include_input) {
+			for (idx_t col_idx = 0; col_idx < input.ColumnCount(); col_idx++) {
+				ConstantVector::Reference(chunk.data[col_idx], input.data[col_idx], state.parent_position,
+				                          input.size());
+			}
+			output_offset = input.ColumnCount();
 		}
 
 		for (idx_t col_idx = 0; col_idx < state.list_data.ColumnCount(); col_idx++) {
-			auto &result_vector = chunk.data[col_idx + input.ColumnCount()];
+			auto &result_vector = chunk.data[col_idx + output_offset];
 
-			auto &vdata = state.list_vector_data[col_idx];
-			auto &child_data = state.list_child_data[col_idx];
-			auto current_idx = vdata.sel->get_index(state.parent_position);
-
-			auto list_data = (list_entry_t *)vdata.data;
-			auto list_entry = list_data[current_idx];
-
-			idx_t list_count;
-			if (state.list_position >= list_entry.length) {
-				list_count = 0;
+			if (state.list_data.data[col_idx].GetType() == LogicalType::SQLNULL) {
+				// UNNEST(NULL)
+				chunk.SetCardinality(0);
 			} else {
-				list_count = MinValue<idx_t>(this_chunk_len, list_entry.length - state.list_position);
-			}
+				auto &vdata = state.list_vector_data[col_idx];
+				auto &child_data = state.list_child_data[col_idx];
+				auto current_idx = vdata.sel->get_index(state.parent_position);
 
-			if (list_entry.length > state.list_position) {
-				if (!vdata.validity.RowIsValid(current_idx)) {
-					UnnestNull(0, list_count, result_vector);
+				auto list_data = (list_entry_t *)vdata.data;
+				auto list_entry = list_data[current_idx];
+
+				idx_t list_count;
+				if (state.list_position >= list_entry.length) {
+					list_count = 0;
 				} else {
-					auto &list_vector = state.list_data.data[col_idx];
-					auto &child_vector = ListVector::GetEntry(list_vector);
-					auto list_size = ListVector::GetListSize(list_vector);
-
-					auto base_offset = list_entry.offset + state.list_position;
-					UnnestVector(child_data, child_vector, list_size, base_offset, base_offset + list_count,
-					             result_vector);
+					list_count = MinValue<idx_t>(this_chunk_len, list_entry.length - state.list_position);
 				}
+
+				if (list_entry.length > state.list_position) {
+					if (!vdata.validity.RowIsValid(current_idx)) {
+						UnnestNull(0, list_count, result_vector);
+					} else {
+						auto &list_vector = state.list_data.data[col_idx];
+						auto &child_vector = ListVector::GetEntry(list_vector);
+						auto list_size = ListVector::GetListSize(list_vector);
+
+						auto base_offset = list_entry.offset + state.list_position;
+						UnnestVector(child_data, child_vector, list_size, base_offset, base_offset + list_count,
+						             result_vector);
+					}
+				}
+
+				UnnestNull(list_count, this_chunk_len, result_vector);
 			}
-			UnnestNull(list_count, this_chunk_len, result_vector);
 		}
 
 		state.list_position += this_chunk_len;
@@ -270,6 +292,11 @@ OperatorResultType PhysicalUnnest::Execute(ExecutionContext &context, DataChunk 
 		chunk.Verify();
 	} while (chunk.size() == 0);
 	return OperatorResultType::HAVE_MORE_OUTPUT;
+}
+
+OperatorResultType PhysicalUnnest::Execute(ExecutionContext &context, DataChunk &input, DataChunk &chunk,
+                                           GlobalOperatorState &gstate, OperatorState &state) const {
+	return ExecuteInternal(context.client, input, chunk, state, select_list);
 }
 
 } // namespace duckdb

@@ -1,10 +1,107 @@
 #include "duckdb/parser/query_node/select_node.hpp"
 #include "duckdb/parser/expression_util.hpp"
+#include "duckdb/common/field_writer.hpp"
+#include "duckdb/parser/keyword_helper.hpp"
 
 namespace duckdb {
 
 SelectNode::SelectNode()
     : QueryNode(QueryNodeType::SELECT_NODE), aggregate_handling(AggregateHandling::STANDARD_HANDLING) {
+}
+
+string SelectNode::ToString() const {
+	string result;
+	result = CTEToString();
+	result += "SELECT ";
+
+	// search for a distinct modifier
+	for (idx_t modifier_idx = 0; modifier_idx < modifiers.size(); modifier_idx++) {
+		if (modifiers[modifier_idx]->type == ResultModifierType::DISTINCT_MODIFIER) {
+			auto &distinct_modifier = (DistinctModifier &)*modifiers[modifier_idx];
+			result += "DISTINCT ";
+			if (!distinct_modifier.distinct_on_targets.empty()) {
+				result += "ON (";
+				for (idx_t k = 0; k < distinct_modifier.distinct_on_targets.size(); k++) {
+					if (k > 0) {
+						result += ", ";
+					}
+					result += distinct_modifier.distinct_on_targets[k]->ToString();
+				}
+				result += ") ";
+			}
+		}
+	}
+	for (idx_t i = 0; i < select_list.size(); i++) {
+		if (i > 0) {
+			result += ", ";
+		}
+		result += select_list[i]->ToString();
+		if (!select_list[i]->alias.empty()) {
+			result += " AS " + KeywordHelper::WriteOptionallyQuoted(select_list[i]->alias);
+		}
+	}
+	if (from_table && from_table->type != TableReferenceType::EMPTY) {
+		result += " FROM " + from_table->ToString();
+	}
+	if (where_clause) {
+		result += " WHERE " + where_clause->ToString();
+	}
+	if (!groups.grouping_sets.empty()) {
+		result += " GROUP BY ";
+		// if we are dealing with multiple grouping sets, we have to add a few additional brackets
+		bool grouping_sets = groups.grouping_sets.size() > 1;
+		if (grouping_sets) {
+			result += "GROUPING SETS (";
+		}
+		for (idx_t i = 0; i < groups.grouping_sets.size(); i++) {
+			auto &grouping_set = groups.grouping_sets[i];
+			if (i > 0) {
+				result += ",";
+			}
+			if (grouping_set.empty()) {
+				result += "()";
+				continue;
+			}
+			if (grouping_sets) {
+				result += "(";
+			}
+			bool first = true;
+			for (auto &grp : grouping_set) {
+				if (!first) {
+					result += ", ";
+				}
+				result += groups.group_expressions[grp]->ToString();
+				first = false;
+			}
+			if (grouping_sets) {
+				result += ")";
+			}
+		}
+		if (grouping_sets) {
+			result += ")";
+		}
+	} else if (aggregate_handling == AggregateHandling::FORCE_AGGREGATES) {
+		result += " GROUP BY ALL";
+	}
+	if (having) {
+		result += " HAVING " + having->ToString();
+	}
+	if (qualify) {
+		result += " QUALIFY " + qualify->ToString();
+	}
+	if (sample) {
+		result += " USING SAMPLE ";
+		result += sample->sample_size.ToString();
+		if (sample->is_percentage) {
+			result += "%";
+		}
+		result += " (" + SampleMethodToString(sample->method);
+		if (sample->seed >= 0) {
+			result += ", " + std::to_string(sample->seed);
+		}
+		result += ")";
+	}
+	return result + ResultModifiersToString();
 }
 
 bool SelectNode::Equals(const QueryNode *other_p) const {
@@ -56,7 +153,7 @@ bool SelectNode::Equals(const QueryNode *other_p) const {
 	return true;
 }
 
-unique_ptr<QueryNode> SelectNode::Copy() {
+unique_ptr<QueryNode> SelectNode::Copy() const {
 	auto result = make_unique<SelectNode>();
 	for (auto &child : select_list) {
 		result->select_list.push_back(child->Copy());
@@ -76,42 +173,34 @@ unique_ptr<QueryNode> SelectNode::Copy() {
 	return move(result);
 }
 
-void SelectNode::Serialize(Serializer &serializer) {
-	QueryNode::Serialize(serializer);
-	// select_list
-	serializer.WriteList(select_list);
-	// from clause
-	serializer.WriteOptional(from_table);
-	// where_clause
-	serializer.WriteOptional(where_clause);
-	// group by
-	serializer.WriteList(groups.group_expressions);
-	serializer.Write<idx_t>(groups.grouping_sets.size());
+void SelectNode::Serialize(FieldWriter &writer) const {
+	writer.WriteSerializableList(select_list);
+	writer.WriteOptional(from_table);
+	writer.WriteOptional(where_clause);
+	writer.WriteSerializableList(groups.group_expressions);
+	writer.WriteField<uint32_t>(groups.grouping_sets.size());
+	auto &serializer = writer.GetSerializer();
 	for (auto &grouping_set : groups.grouping_sets) {
 		serializer.Write<idx_t>(grouping_set.size());
 		for (auto &idx : grouping_set) {
 			serializer.Write<idx_t>(idx);
 		}
 	}
-	serializer.Write<AggregateHandling>(aggregate_handling);
-	// having / sample
-	serializer.WriteOptional(having);
-	serializer.WriteOptional(sample);
-	// qualify
-	serializer.WriteOptional(qualify);
+	writer.WriteField<AggregateHandling>(aggregate_handling);
+	writer.WriteOptional(having);
+	writer.WriteOptional(sample);
+	writer.WriteOptional(qualify);
 }
 
-unique_ptr<QueryNode> SelectNode::Deserialize(Deserializer &source) {
+unique_ptr<QueryNode> SelectNode::Deserialize(FieldReader &reader) {
 	auto result = make_unique<SelectNode>();
-	// select_list
-	source.ReadList<ParsedExpression>(result->select_list);
-	// from clause
-	result->from_table = source.ReadOptional<TableRef>();
-	// where_clause
-	result->where_clause = source.ReadOptional<ParsedExpression>();
-	// group by
-	source.ReadList<ParsedExpression>(result->groups.group_expressions);
-	auto grouping_set_count = source.Read<idx_t>();
+	result->select_list = reader.ReadRequiredSerializableList<ParsedExpression>();
+	result->from_table = reader.ReadOptional<TableRef>(nullptr);
+	result->where_clause = reader.ReadOptional<ParsedExpression>(nullptr);
+	result->groups.group_expressions = reader.ReadRequiredSerializableList<ParsedExpression>();
+
+	auto grouping_set_count = reader.ReadRequired<uint32_t>();
+	auto &source = reader.GetSource();
 	for (idx_t set_idx = 0; set_idx < grouping_set_count; set_idx++) {
 		auto set_entries = source.Read<idx_t>();
 		GroupingSet grouping_set;
@@ -120,13 +209,10 @@ unique_ptr<QueryNode> SelectNode::Deserialize(Deserializer &source) {
 		}
 		result->groups.grouping_sets.push_back(grouping_set);
 	}
-	result->aggregate_handling = source.Read<AggregateHandling>();
-
-	// having / sample
-	result->having = source.ReadOptional<ParsedExpression>();
-	result->sample = source.ReadOptional<SampleOptions>();
-	// qualify
-	result->qualify = source.ReadOptional<ParsedExpression>();
+	result->aggregate_handling = reader.ReadRequired<AggregateHandling>();
+	result->having = reader.ReadOptional<ParsedExpression>(nullptr);
+	result->sample = reader.ReadOptional<SampleOptions>(nullptr);
+	result->qualify = reader.ReadOptional<ParsedExpression>(nullptr);
 	return move(result);
 }
 

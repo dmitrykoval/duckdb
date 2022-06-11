@@ -135,6 +135,8 @@ string ExpressionTypeToString(ExpressionType type) {
 		return "POSITIONAL_REFERENCE";
 	case ExpressionType::LAMBDA:
 		return "LAMBDA";
+	case ExpressionType::ARROW:
+		return "ARROW";
 	case ExpressionType::INVALID:
 		break;
 	}
@@ -144,8 +146,6 @@ string ExpressionTypeToString(ExpressionType type) {
 
 string ExpressionTypeToOperator(ExpressionType type) {
 	switch (type) {
-	case ExpressionType::OPERATOR_NOT:
-		return "!";
 	case ExpressionType::COMPARE_EQUAL:
 		return "=";
 	case ExpressionType::COMPARE_NOTEQUAL:
@@ -158,6 +158,10 @@ string ExpressionTypeToOperator(ExpressionType type) {
 		return "<=";
 	case ExpressionType::COMPARE_GREATERTHANOREQUALTO:
 		return ">=";
+	case ExpressionType::COMPARE_DISTINCT_FROM:
+		return "IS DISTINCT FROM";
+	case ExpressionType::COMPARE_NOT_DISTINCT_FROM:
+		return "IS NOT DISTINCT FROM";
 	case ExpressionType::CONJUNCTION_AND:
 		return "AND";
 	case ExpressionType::CONJUNCTION_OR:
@@ -219,6 +223,23 @@ ExpressionType FlipComparisionExpression(ExpressionType type) {
 		throw InternalException("Unsupported comparison type in flip");
 	}
 	return flipped_type;
+}
+
+ExpressionType OperatorToExpressionType(const string &op) {
+	if (op == "=" || op == "==") {
+		return ExpressionType::COMPARE_EQUAL;
+	} else if (op == "!=" || op == "<>") {
+		return ExpressionType::COMPARE_NOTEQUAL;
+	} else if (op == "<") {
+		return ExpressionType::COMPARE_LESSTHAN;
+	} else if (op == ">") {
+		return ExpressionType::COMPARE_GREATERTHAN;
+	} else if (op == "<=") {
+		return ExpressionType::COMPARE_LESSTHANOREQUALTO;
+	} else if (op == ">=") {
+		return ExpressionType::COMPARE_GREATERTHANOREQUALTO;
+	}
+	return ExpressionType::INVALID;
 }
 
 } // namespace duckdb

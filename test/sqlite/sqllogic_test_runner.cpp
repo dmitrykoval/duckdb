@@ -73,6 +73,9 @@ void SQLLogicTestRunner::LoadDatabase(string dbpath) {
 
 	db = make_unique<DuckDB>(dbpath, config.get());
 	con = make_unique<Connection>(*db);
+	if (enable_verification) {
+		con->EnableQueryVerification();
+	}
 
 	// load any previously loaded extensions again
 	for (auto &extension : extensions) {
@@ -152,6 +155,7 @@ bool SQLLogicTestRunner::ForEachTokenReplace(const string &parameter, vector<str
 		result.push_back("bool");
 		result.push_back("interval");
 		result.push_back("varchar");
+		result.push_back("json");
 		collection = true;
 	}
 	if (is_compression) {
@@ -159,6 +163,7 @@ bool SQLLogicTestRunner::ForEachTokenReplace(const string &parameter, vector<str
 		result.push_back("uncompressed");
 		result.push_back("rle");
 		result.push_back("bitpacking");
+		result.push_back("dictionary");
 		collection = true;
 	}
 	return collection;
@@ -192,6 +197,12 @@ void SQLLogicTestRunner::ExecuteFile(string script) {
 	while (parser.NextStatement()) {
 		// tokenize the current line
 		auto token = parser.Tokenize();
+
+		// throw explicit error on single line statements that are not separated by a comment or newline
+		if (parser.IsSingleLineStatement(token) && !parser.NextLineEmptyOrComment()) {
+			parser.Fail("all test statements need to be separated by an empty line");
+		}
+
 		bool skip_statement = false;
 		while (token.type == SQLLogicTokenType::SQLLOGIC_SKIP_IF || token.type == SQLLogicTokenType::SQLLOGIC_ONLY_IF) {
 			// skipif/onlyif
@@ -201,6 +212,9 @@ void SQLLogicTestRunner::ExecuteFile(string script) {
 			}
 			auto system_name = StringUtil::Lower(token.parameters[0]);
 			bool our_system = system_name == "duckdb";
+			if (original_sqlite_test) {
+				our_system = our_system || system_name == "postgresql";
+			}
 			if (our_system == skip_if) {
 				// we skip this command in two situations
 				// (1) skipif duckdb
@@ -339,6 +353,48 @@ void SQLLogicTestRunner::ExecuteFile(string script) {
 			} else {
 				parser.Fail("unrecognized mode: %s", token.parameters[0]);
 			}
+		} else if (token.type == SQLLogicTokenType::SQLLOGIC_SET) {
+			if (token.parameters.size() < 1) {
+				parser.Fail("set requires at least 1 parameter (e.g. set ignore_error_messages HTTP Error)");
+			}
+			if (token.parameters[0] == "ignore_error_messages" || token.parameters[0] == "always_fail_error_messages") {
+				unordered_set<string> *string_set;
+				if (token.parameters[0] == "ignore_error_messages") {
+					string_set = &ignore_error_messages;
+				} else {
+					string_set = &always_fail_error_messages;
+				}
+
+				// the set command overrides the default values
+				string_set->clear();
+
+				// Parse the parameter list as a comma separated list of strings that can contain spaces
+				// e.g. `set ignore_error_messages This is an error message, This_is_another, and   another`
+				if (token.parameters.size() > 1) {
+					string current_string = "";
+					unsigned int token_idx = 1;
+					unsigned int substr_idx = 0;
+					while (token_idx < token.parameters.size()) {
+						auto comma_pos = token.parameters[token_idx].find(',', substr_idx);
+						if (comma_pos == string::npos) {
+							current_string += token.parameters[token_idx].substr(substr_idx) + " ";
+							token_idx++;
+							substr_idx = 0;
+						} else {
+							current_string += token.parameters[token_idx].substr(substr_idx, comma_pos);
+							StringUtil::Trim(current_string);
+							string_set->insert(current_string);
+							current_string = "";
+							substr_idx = comma_pos + 1;
+						}
+					}
+					StringUtil::Trim(current_string);
+					string_set->insert(current_string);
+					string_set->erase("");
+				}
+			} else {
+				parser.Fail("unrecognized set parameter: %s", token.parameters[0]);
+			}
 		} else if (token.type == SQLLogicTokenType::SQLLOGIC_LOOP) {
 			if (token.parameters.size() != 3) {
 				parser.Fail("Expected loop [iterator_name] [start] [end] (e.g. loop i 1 300)");
@@ -430,6 +486,20 @@ void SQLLogicTestRunner::ExecuteFile(string script) {
 					// extension known but not build: skip this test
 					return;
 				}
+			}
+		} else if (token.type == SQLLogicTokenType::SQLLOGIC_REQUIRE_ENV) {
+			if (token.parameters.size() < 2) {
+				parser.Fail("require-env requires 2 arguments: <env name> <env value>");
+			}
+
+			auto env_var = token.parameters[0];
+			auto env_value = token.parameters[1];
+
+			auto env_actual = std::getenv(env_var.c_str());
+
+			if (env_actual == nullptr || std::strcmp(env_actual, env_value.c_str()) != 0) {
+				// Environment variable was not found, this test should not be run
+				return;
 			}
 		} else if (token.type == SQLLogicTokenType::SQLLOGIC_LOAD) {
 			if (InLoop()) {

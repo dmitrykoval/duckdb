@@ -14,6 +14,7 @@
 #include "duckdb/common/printer.hpp"
 
 namespace duckdb {
+
 //! SQLStatement is the base class of any type of SQL statement.
 class SQLStatement {
 public:
@@ -32,7 +33,13 @@ public:
 	//! The query text that corresponds to this SQL statement
 	string query;
 
+protected:
+	SQLStatement(const SQLStatement &other) = default;
+
 public:
+	virtual string ToString() const {
+		throw InternalException("ToString not supported for this type of SQLStatement");
+	}
 	//! Create a copy of this SelectStatement
 	virtual unique_ptr<SQLStatement> Copy() const = 0;
 };
