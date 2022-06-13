@@ -116,7 +116,7 @@
 extern "C" {
 #endif
 
-# include "../bn/bn.h"
+# include "bn.h"
 
 /*-
  * BN_window_bits_for_exponent_size -- macro for sliding window mod_exp functions

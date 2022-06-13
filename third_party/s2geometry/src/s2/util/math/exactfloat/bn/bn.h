@@ -130,12 +130,12 @@ extern "C" {
 #endif
 
 # include <limits.h>
-# include "../bn/e_os2.h"
+# include "e_os2.h"
 # ifndef OPENSSL_NO_FP_API
 #  include <stdio.h>            /* FILE */
 # endif
-# include "../bn/ossl_typ.h"
-# include "../bn/crypto.h"
+# include "ossl_typ.h"
+# include "crypto.h"
 
 /*
  * These preprocessor symbols control various aspects of the bignum headers

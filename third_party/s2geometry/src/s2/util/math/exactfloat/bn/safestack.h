@@ -59,7 +59,7 @@
 extern "C" {
 #endif
 
-# include "../bn/stack.h"
+# include "stack.h"
 
 # ifndef CHECKED_PTR_OF
 #  define CHECKED_PTR_OF(type, p) \

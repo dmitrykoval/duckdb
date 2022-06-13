@@ -123,28 +123,16 @@ extern "C" {
 
 # include <stdlib.h>
 
-# include "../bn/e_os2.h"
+# include "e_os2.h"
 
 # ifndef OPENSSL_NO_FP_API
 #  include <stdio.h>
 # endif
 
-# include "../bn/stack.h"
-# include "../bn/safestack.h"
-# include "../bn/opensslv.h"
-# include "../bn/ossl_typ.h"
-
-# ifdef CHARSET_EBCDIC
-#  include "../bn/ebcdic.h"
-# endif
-
-#if 0
-/*
- * Resolve problems on some operating systems with symbol names that clash
- * one way or another
- */
-# include "../bn/symhacks.h"
-#endif
+# include "stack.h"
+# include "safestack.h"
+# include "opensslv.h"
+# include "ossl_typ.h"
 
 /* Backward compatibility to SSLeay */
 /*

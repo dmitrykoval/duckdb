@@ -116,20 +116,14 @@
 extern "C" {
 #endif
 
-# include "../bn/e_os2.h"
+# include "e_os2.h"
 
 # ifndef OPENSSL_NO_FP_API
 #  include <stdio.h>
 #  include <stdlib.h>
 # endif
 
-# include "../bn/ossl_typ.h"
-# ifndef OPENSSL_NO_BIO
-#  include "../bn/bio.h"
-# endif
-# ifndef OPENSSL_NO_LHASH
-#  include "../bn/lhash.h"
-# endif
+# include "ossl_typ.h"
 
 # ifndef OPENSSL_NO_ERR
 #  define ERR_PUT_error(a,b,c,d,e)        ERR_put_error(a,b,c,d,e)
