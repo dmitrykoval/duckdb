@@ -170,6 +170,14 @@ if(BUILD_TESTING AND ABSL_BUILD_TESTING)
   check_target(GTest::gmock_main)
 endif()
 
+if(MSVC)
+  list(APPEND ABSL_DEFAULT_COPTS "/W0")
+elseif("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang"
+        OR "${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
+  list(APPEND ABSL_DEFAULT_COPTS "-w")
+endif()
+
+
 add_subdirectory(absl)
 
 if(ABSL_ENABLE_INSTALL)
