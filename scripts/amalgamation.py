@@ -113,7 +113,6 @@ def absl_test_files(absl_dir):
         for filename in files:
             if filename.endswith(('_test.cc', '_testing.cc', '_benchmark.cc')):
                 tests.append(filename)
-                print(filename)
     return tests
 
 
