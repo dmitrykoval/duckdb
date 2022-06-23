@@ -56,6 +56,7 @@ Physical Memory representation in DuckDB:
 
 Data Structures view:
 
+```
 Vector<Struct>: {
   'latitude': List<double_t>[[52.5255], [52.5255, 52.5180, 52.5070], [52.5255, 52.5255, 52.5180, 52.5245, 52.5246, 52.5983, 52.0245]],
   'longitude': List<double_t>[[13.3463], [13.3463, 13.3496, 13.3496], [13.3469, 13.3467, 13.3468, 13.3496, 13.3496, 13.2893, 13.9856]],
@@ -65,6 +66,7 @@ Vector<Struct>: {
   'coll_mpolly_len': Vector<idx_t>[],
   's2cellid': Vector<uint64_t>[824687234, 824687234, 824687235]
 }
+```
 
 Reference implementation in pure C++:
 [geography_type](https://github.com/dmitrykoval/duckdb/blob/dkoval.spatial/src/include/duckdb/common/types/geography_type.hpp)
