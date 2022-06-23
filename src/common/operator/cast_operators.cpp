@@ -18,6 +18,7 @@
 #include "duckdb/common/types/timestamp.hpp"
 #include "duckdb/common/types/vector.hpp"
 #include "fast_float/fast_float.h"
+#include "duckdb/common/spatial/WKTWriter.hpp"
 #include "fmt/format.h"
 
 #include <cctype>
@@ -2309,5 +2310,19 @@ bool TryCastFromDecimal::Operation(hugeint_t input, double &result, string *erro
                                    uint8_t scale) {
 	return TryCastDecimalToFloatingPoint<hugeint_t, double>(input, result, scale);
 }
+
+//===--------------------------------------------------------------------===//
+// Geography -> string_t cast
+//===--------------------------------------------------------------------===//
+template <>
+string_t CastFromGeography::Operation(const Geography &input, Vector &vector) {
+	auto str_val(WKTWriter::GeogToWkt(input));
+	auto str_size = str_val.size();
+	string_t result = StringVector::EmptyString(vector, str_size);
+	memcpy(result.GetDataWriteable(), str_val.c_str(), str_size);
+	result.Finalize();
+	return result;
+}
+
 
 } // namespace duckdb

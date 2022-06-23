@@ -671,4 +671,25 @@ template <>
 DUCKDB_API bool TryCastToUUID::Operation(string_t input, hugeint_t &result, Vector &result_vector,
                                          string *error_message, bool strict);
 
+//===--------------------------------------------------------------------===//
+// Geography Casts
+//===--------------------------------------------------------------------===//
+template <>
+bool TryCast::Operation(const Geography &input, Geography &result, bool strict);
+
+//===--------------------------------------------------------------------===//
+// Geography
+//===--------------------------------------------------------------------===//
+struct CastFromGeography {
+	template <class SRC>
+	static inline string_t Operation(const SRC &input, Vector &result) {
+		throw duckdb::NotImplementedException("Cast from Geography could not be performed!");
+	}
+};
+template <>
+duckdb::string_t CastFromGeography::Operation(const Geography &input, Vector &vector);
+
+
+
+
 } // namespace duckdb

@@ -10,6 +10,7 @@ add_subdirectory(string)
 add_subdirectory(struct)
 add_subdirectory(system)
 add_subdirectory(enum)
+add_subdirectory(geospatial)
 add_library_unity(
   duckdb_func_scalar
   OBJECT
@@ -22,7 +23,8 @@ add_library_unity(
   pragma_functions.cpp
   sequence_functions.cpp
   trigonometrics_functions.cpp
-  enum_functions.cpp)
+  enum_functions.cpp
+  geospatial_functions.cpp)
 set(ALL_OBJECT_FILES
     ${ALL_OBJECT_FILES} $<TARGET_OBJECTS:duckdb_func_scalar>
     PARENT_SCOPE)

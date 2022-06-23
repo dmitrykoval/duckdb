@@ -121,6 +121,8 @@ void BuiltinFunctions::Initialize() {
 
 	RegisterPragmaFunctions();
 
+	RegisterGeospatialFunctions();
+
 	// initialize collations
 	AddCollation("nocase", LowerFun::GetFunction(), true);
 	AddCollation("noaccent", StripAccentsFun::GetFunction());

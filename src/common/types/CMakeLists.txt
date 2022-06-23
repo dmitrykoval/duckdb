@@ -25,7 +25,9 @@ add_library_unity(
   vector_buffer.cpp
   vector.cpp
   vector_cache.cpp
-  vector_constants.cpp)
+  vector_constants.cpp
+  geography_type.cpp
+  geography_vector.cpp)
 set(ALL_OBJECT_FILES
     ${ALL_OBJECT_FILES} $<TARGET_OBJECTS:duckdb_common_types>
     PARENT_SCOPE)

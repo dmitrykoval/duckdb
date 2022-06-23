@@ -170,6 +170,9 @@ static bool TemplatedBooleanOperation(const Value &left, const Value &right) {
 		}
 		return false;
 	}
+	case PhysicalType::GEOGRAPHY: {
+		return OP::Operation(GeographyValue::Get(left), GeographyValue::Get(right));
+	}
 	default:
 		throw InternalException("Unimplemented type for value comparison");
 	}

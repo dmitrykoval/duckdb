@@ -1,0 +1,27 @@
+# name: test/sql/function/geography/test_constructors.test
+# description: Test Geography constructor functions
+# group: [geography]
+
+statement ok
+PRAGMA enable_verification
+
+# Make point constructor
+query T
+SELECT st_make_point(52.5251, 13.1315)::TEXT;
+----
+POINT(52.5251 13.1315)
+
+query T
+SELECT st_make_point(null, 13.1315)::TEXT;
+----
+NULL
+
+query T
+SELECT st_make_point(52.5251, null)::TEXT;
+----
+NULL
+
+query T
+SELECT st_make_point(null, null)::TEXT;
+----
+NULL

@@ -215,6 +215,9 @@ private:
 
 	// pragmas
 	void RegisterPragmaFunctions();
+
+	// geospatial functions
+	void RegisterGeospatialFunctions();
 };
 
 } // namespace duckdb

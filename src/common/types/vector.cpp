@@ -373,6 +373,11 @@ void Vector::SetValue(idx_t index, const Value &val) {
 		entry.offset = offset;
 		break;
 	}
+	case PhysicalType::GEOGRAPHY: {
+		auto data_ptr = reinterpret_cast<Geography *>(data);
+		new (data_ptr + index) Geography(val.GetValueUnsafe<Geography>());
+		break;
+	}
 	default:
 		throw InternalException("Unimplemented type for Vector::SetValue");
 	}
@@ -520,6 +525,13 @@ Value Vector::GetValue(idx_t index) const {
 			children.push_back(child_vec.GetValue(i));
 		}
 		return Value::LIST(ListType::GetChildType(GetType()), move(children));
+	}
+	case LogicalTypeId::GEOGRAPHY: {
+		if (GetVectorType() == VectorType::CONSTANT_VECTOR) {
+			return Value::GEOGRAPHY(((Geography *)data)[index]);
+		} else {
+			return Value::GEOGRAPHY(std::move(((Geography *)data)[index]));
+		}
 	}
 	default:
 		throw InternalException("Unimplemented type for value access");
@@ -699,6 +711,13 @@ void Vector::Normalify(idx_t count) {
 			}
 			auxiliary = move(normalified_buffer);
 		} break;
+		case PhysicalType::GEOGRAPHY: {
+			auto constant = (Geography *)old_data;
+			for (idx_t i = 0; i < count; i++) {
+				new (data + i) Geography(*constant);
+			}
+			break;
+		}
 		default:
 			throw InternalException("Unimplemented type for VectorOperations::Normalify");
 		}

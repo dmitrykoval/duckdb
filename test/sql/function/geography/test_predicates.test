@@ -1,0 +1,133 @@
+# name: test/sql/function/geography/test_predicates.test
+# description: Test Geography predicate functions
+# group: [geography]
+
+statement ok
+PRAGMA enable_verification
+
+# ST_WITHIN
+query I
+select st_within(
+        st_from_wkt('POINT (13.3450 52.5266)'),
+        st_from_wkt('POLYGON ((13.4402 52.5393, 13.3618 52.5484, 13.2553 52.5066, 13.3907 52.4605, 13.4823 52.5019))'))
+----
+1
+
+query I
+select st_within(
+        st_from_wkt('POINT (13.0630 52.4025)'),
+        st_from_wkt('POLYGON ((13.4402 52.5393, 13.3618 52.5484, 13.2553 52.5066, 13.3907 52.4605, 13.4823 52.5019))'))
+----
+0
+
+query I
+select st_within(
+        null,
+        st_from_wkt('POLYGON ((13.4402 52.5393, 13.3618 52.5484, 13.2553 52.5066, 13.3907 52.4605, 13.4823 52.5019))'))
+----
+NULL
+
+query I
+select st_within(st_from_wkt('POINT (13.0630 52.4025)'), null)
+----
+NULL
+
+query I
+select st_within(null, null)
+----
+NULL
+
+# ST_CONTAINS
+query I
+select st_contains(
+        st_from_wkt('POLYGON ((13.4402 52.5393, 13.3618 52.5484, 13.2553 52.5066, 13.3907 52.4605, 13.4823 52.5019))'),
+        st_from_wkt('POINT (13.3450 52.5266)'))
+----
+1
+
+query I
+select st_contains(
+        st_from_wkt('POLYGON ((13.4402 52.5393, 13.3618 52.5484, 13.2553 52.5066, 13.3907 52.4605, 13.4823 52.5019))'),
+        st_from_wkt('POINT (13.0630 52.4025)'))
+----
+0
+
+# Test with multiple data points
+
+statement ok
+CREATE TABLE points(city VARCHAR, lat DOUBLE, lng DOUBLE)
+
+statement ok
+INSERT INTO points Values('Berlin', 52.520008, 13.404954)
+
+statement ok
+INSERT INTO points Values('Cologne', 50.935173, 6.953101)
+
+statement ok
+INSERT INTO points Values('Düsseldorf', 51.227144, 6.782048)
+
+statement ok
+INSERT INTO points Values('Frankfurt am Main', 50.110924, 8.682127)
+
+statement ok
+INSERT INTO points Values('Hamburg', 53.551086, 9.993682)
+
+statement ok
+INSERT INTO points Values('Leipzig', 51.343479, 12.387772)
+
+statement ok
+INSERT INTO points Values('Munich', 48.137154, 11.576124)
+
+statement ok
+INSERT INTO points Values('Dortmund', 51.5134, 7.468554)
+
+statement ok
+INSERT INTO points Values('Stuttgart', 48.777128, 9.181332)
+
+statement ok
+INSERT INTO points Values('Nuremberg', 49.44982, 11.077438)
+
+statement ok
+INSERT INTO points Values('Hannover', 52.37052, 9.73322)
+
+statement ok
+INSERT INTO points Values('Nantes', null, null)
+
+statement ok
+INSERT INTO points Values('Somewhere', 52.37052, 9.73322)
+
+statement ok
+INSERT INTO points Values('Malaga', 36.721317, -4.477073)
+
+query TI
+SELECT city, st_within(st_make_point(lng, lat),
+    st_from_wkt('POLYGON ((13.4402 52.5393, 13.3618 52.5484, 13.2553 52.5066, 13.3907 52.4605, 13.4823 52.5019))')) FROM points;
+----
+Berlin
+1
+Cologne
+0
+Düsseldorf
+0
+Frankfurt am Main
+0
+Hamburg
+0
+Leipzig
+0
+Munich
+0
+Dortmund
+0
+Stuttgart
+0
+Nuremberg
+0
+Hannover
+0
+Nantes
+NULL
+Somewhere
+0
+Malaga
+0

@@ -10,6 +10,8 @@
 
 #include "duckdb/common/vector_operations/vector_operations.hpp"
 
+#include "duckdb/common/types/geography_vector.hpp"
+
 namespace duckdb {
 
 template <class T>
@@ -220,6 +222,16 @@ void VectorOperations::Copy(const Vector &source, Vector &target, const Selectio
 				if (tmask.RowIsValid(target_offset + i)) {
 					old_target_child_len += target_entry.length;
 				}
+			}
+		}
+		break;
+	}
+	case PhysicalType::GEOGRAPHY: {
+		for (idx_t i = 0; i < copy_count; i++) {
+			auto source_idx = sel->get_index(source_offset + i);
+			auto target_idx = target_offset + i;
+			if (tmask.RowIsValid(target_idx)) {
+				GeographyVector::CopyGeography(source, source_idx, target, target_idx);
 			}
 		}
 		break;

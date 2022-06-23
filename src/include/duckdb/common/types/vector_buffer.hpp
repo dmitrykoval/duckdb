@@ -13,6 +13,8 @@
 #include "duckdb/common/types/string_heap.hpp"
 #include "duckdb/common/types/string_type.hpp"
 
+#include <array>
+
 namespace duckdb {
 
 class BufferHandle;
@@ -28,7 +30,8 @@ enum class VectorBufferType : uint8_t {
 	STRUCT_BUFFER,       // struct buffer, holds a ordered mapping from name to child vector
 	LIST_BUFFER,         // list buffer, holds a single flatvector child
 	MANAGED_BUFFER,      // managed buffer, holds a buffer managed by the buffermanager
-	OPAQUE_BUFFER        // opaque buffer, can be created for example by the parquet reader
+	OPAQUE_BUFFER,       // opaque buffer, can be created for example by the parquet reader
+	GEOGRAPHY_BUFFER     // geography buffer, holds sequence of geographical points
 };
 
 enum class VectorAuxiliaryDataType : uint8_t {

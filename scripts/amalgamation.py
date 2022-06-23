@@ -33,6 +33,16 @@ fastfloat_include_dir = os.path.join('third_party', 'fast_float')
 moodycamel_include_dir = os.path.join('third_party', 'concurrentqueue')
 pcg_include_dir = os.path.join('third_party', 'pcg')
 
+absl_dir = os.path.join('third_party', 's2geometry', 'third_party', 'abseil-cpp')
+absl_include_dir = os.path.join('third_party', 's2geometry', 'third_party', 'abseil-cpp')
+
+bn_dir = os.path.join('third_party', 's2geometry', 'src', 's2', 'util', 'math', 'exactfloat')
+bn_include_dir = os.path.join('third_party', 's2geometry', 'src', 's2', 'util', 'math', 'exactfloat')
+bn_impl_include_dir = os.path.join('third_party', 's2geometry', 'src', 's2', 'util', 'math', 'exactfloat', 'bn')
+
+s2_dir = os.path.join('third_party', 's2geometry')
+s2_include_dir = os.path.join('third_party', 's2geometry', 'src')
+
 # files included in the amalgamated "duckdb.hpp" file
 main_header_files = [os.path.join(include_dir, 'duckdb.hpp'),
     os.path.join(include_dir, 'duckdb.h'),
@@ -88,14 +98,30 @@ if '--extended' in sys.argv:
     main_header_files = normalize_path(main_header_files)
 
 # include paths for where to search for include files during amalgamation
-include_paths = [include_dir, fmt_include_dir, re2_dir, miniz_dir, utf8proc_include_dir, hll_dir, fastpforlib_dir, tdigest_dir, utf8proc_dir, pg_query_include_dir, pg_query_dir, moodycamel_include_dir, pcg_include_dir, httplib_include_dir, fastfloat_include_dir]
+include_paths = [include_dir, fmt_include_dir, re2_dir, miniz_dir, utf8proc_include_dir, hll_dir, fastpforlib_dir, tdigest_dir, utf8proc_dir, pg_query_include_dir, pg_query_dir, moodycamel_include_dir, pcg_include_dir, httplib_include_dir, fastfloat_include_dir, absl_include_dir, bn_include_dir, bn_impl_include_dir, s2_include_dir]
 # paths of where to look for files to compile and include to the final amalgamation
-compile_directories = [src_dir, fmt_dir, miniz_dir, re2_dir, hll_dir, fastpforlib_dir, utf8proc_dir, pg_query_dir]
+compile_directories = [src_dir, fmt_dir, miniz_dir, re2_dir, hll_dir, fastpforlib_dir, utf8proc_dir, pg_query_dir, absl_dir, bn_dir, s2_dir]
 
 # files always excluded
 always_excluded = normalize_path(['src/amalgamation/duckdb.cpp', 'src/amalgamation/duckdb.hpp', 'src/amalgamation/parquet-amalgamation.cpp', 'src/amalgamation/parquet-amalgamation.hpp'])
 # files excluded from the amalgamation
 excluded_files = ['grammar.cpp', 'grammar.hpp', 'symbols.cpp']
+
+def absl_test_files(absl_dir):
+    tests = []
+    for _, __, files in os.walk(absl_dir):
+        for filename in files:
+            if filename.endswith(('_test.cc', '_testing.cc', '_benchmark.cc')):
+                tests.append(filename)
+    return tests
+
+
+excluded_s2 = ['spinlock_test_common.cc', 'benchmarks.cc', 'time_zone_fixed.cc', 'time_zone_format.cc',
+               'time_zone_if.cc', 'time_zone_impl.cc', 'time_zone_info.cc', 'time_zone_libc.cc', 'time_zone_lookup.cc',
+               'time_zone_posix.cc']
+excluded_s2 += absl_test_files(absl_dir)
+excluded_files += excluded_s2
+
 # files excluded from individual file compilation during test_compile
 excluded_compilation_files = excluded_files + ['gram.hpp', 'kwlist.hpp', "duckdb-c.cpp"]
 
@@ -112,6 +138,8 @@ def get_includes(fpath, text):
         if skip_duckdb_includes and 'duckdb' in included_file:
             continue
         if 'extension_helper.cpp' in fpath and included_file.endswith('-extension.hpp'):
+            continue
+        if included_file.endswith('_test.cc'):
             continue
         include_statements.append(x[0])
         included_file = os.sep.join(included_file.split('/'))
